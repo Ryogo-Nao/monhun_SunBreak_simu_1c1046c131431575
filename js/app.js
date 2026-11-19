@@ -1,4 +1,5 @@
 import { getState, update, save, exportJSON, importJSON, resetAll, uid } from "./store.js";
+import { norm, match, matchAny, score } from "./search.js";
 
 // ======================================================================
 // マスタデータ
@@ -29,9 +30,6 @@ let resultShown = 30;
 // ユーティリティ
 // ======================================================================
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-function norm(s) {
-  return String(s || "").normalize("NFKC").toLowerCase().replace(/[ぁ-ゖ]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60));
-}
 function toast(msg) {
   const t = document.getElementById("toast");
   t.textContent = msg;
@@ -154,7 +152,7 @@ function pickSkill({ title = "スキルを選択", onPick, multi = false, select
   const sel = new Set(selected);
   openModal({
     title,
-    body: `<input type="search" placeholder="スキル名で検索" data-q style="width:100%">
+    body: `<input type="search" placeholder="スキル名の一部・読み（例: 弱特、こうげき）" data-q style="width:100%">
       <div class="chips" style="margin:8px 0" data-cats>
         <button class="chip on" data-cat="">すべて</button>${CATS.map((c) => `<button class="chip" data-cat="${esc(c)}">${esc(c)}</button>`).join("")}
       </div>
@@ -163,13 +161,13 @@ function pickSkill({ title = "スキルを選択", onPick, multi = false, select
     onMount(m, close) {
       const list = m.querySelector("[data-list]");
       const render = () => {
-        const nq = norm(q);
         let h = "", lastCat = null;
-        for (const s of M.skills) {
-          if (cat && s.cat !== cat) continue;
-          if (nq && !norm(s.name).includes(nq)) continue;
-          if (s.cat !== lastCat) { h += `<div class="cat">${esc(s.cat)}</div>`; lastCat = s.cat; }
-          h += `<button data-skill="${esc(s.name)}" class="${sel.has(s.name) ? "sel" : ""}">${sel.has(s.name) ? "✓ " : ""}${esc(s.name)} <span class="muted small">最大Lv${s.max}</span></button>`;
+        let arr = M.skills.filter((s) => s.cat !== "汎用錬成スキル" && (!cat || s.cat === cat) && match(s.name, q));
+        // 検索語があるときは一致度順（完全一致→前方一致→部分一致→飛び飛び）
+        if (norm(q)) arr = arr.map((s, i) => [s, score(s.name, q), i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map((x) => x[0]);
+        for (const s of arr) {
+          if (!norm(q) && s.cat !== lastCat) { h += `<div class="cat">${esc(s.cat)}</div>`; lastCat = s.cat; }
+          h += `<button data-skill="${esc(s.name)}" class="${sel.has(s.name) ? "sel" : ""}">${sel.has(s.name) ? "✓ " : ""}${esc(s.name)} <span class="muted small">${norm(q) ? esc(s.cat) + " / " : ""}最大Lv${s.max}</span></button>`;
         }
         list.innerHTML = h || '<p class="muted">該当なし</p>';
       };
@@ -211,8 +209,7 @@ function pickArmor({ onPick, part = "head" }) {
     onMount(m, close) {
       const list = m.querySelector("[data-list]");
       const render = () => {
-        const nq = norm(q);
-        const arr = M.armors.filter((a) => a.part === p && (!nq || norm(a.name).includes(nq) || Object.keys(a.skills).some((s) => norm(s).includes(nq))));
+        const arr = M.armors.filter((a) => a.part === p && matchAny([a.name, ...Object.keys(a.skills)], q));
         list.innerHTML = arr.slice(0, 300).map((a) => `<button data-id="${esc(a.id)}"><span class="grow"><b>${esc(a.name)}</b><br><span class="muted small">R${a.rarity} 防${a.def} ${Object.entries(a.skills).map(([k, v]) => esc(k) + v).join(" ")}</span></span>${slotsHTML(a.slots)}</button>`).join("") || '<p class="muted">該当なし</p>';
       };
       render();
@@ -459,8 +456,7 @@ function renderResults() {
   const filter = S().ui.resFilter || "";
   let list = out.results;
   if (filter) {
-    const nq = norm(filter);
-    list = list.filter((r) => r.pieces.some((p) => p.items.some((k) => norm(last.keyMap[k]?.name).includes(nq))) || Object.keys(r.skills).some((s) => norm(s).includes(nq)));
+    list = list.filter((r) => matchAny([...r.pieces.flatMap((p) => p.items.map((k) => last.keyMap[k]?.name)), ...Object.keys(r.skills)], filter));
   }
   list = sorted(list, st.key, st.dir, resultKeyFns());
   const targets = Object.fromEntries(last.conds.map((c) => [c.skill, c.level]));
@@ -553,10 +549,10 @@ function armorFilterList() {
   const st = S();
   const ui = st.ui;
   const part = ui.armorPart || "head";
-  const nq = norm(ui.armorQ || "");
+
   let arr = M.armors.filter((a) => a.part === part && sexOk(a));
   if (ui.armorOwned) arr = arr.filter((a) => st.ownedArmor[a.id]);
-  if (nq) arr = arr.filter((a) => norm(a.name).includes(nq) || Object.keys(a.skills).some((s) => norm(s).includes(nq)));
+  if (ui.armorQ) arr = arr.filter((a) => matchAny([a.name, ...Object.keys(a.skills)], ui.armorQ));
   const ss = sortState("armor", "no", "asc");
   return sorted(arr, ss.key, ss.dir, armorKeyFns);
 }
@@ -717,16 +713,16 @@ const CHARM_SORTS = [["added", "登録順"], ["skill1", "第1スキル名"], ["s
 function charmView() {
   const st = S();
   const ss = sortState("charm", "added", "desc");
-  const nq = norm(st.ui.charmQ || "");
+
   let arr = st.charms.map(charmItem);
-  if (nq) arr = arr.filter((x) => Object.keys(x.skills).some((s) => norm(s).includes(nq)) || norm(x.c.note).includes(nq));
+  if (st.ui.charmQ) arr = arr.filter((x) => matchAny([...Object.keys(x.skills), x.c.note], st.ui.charmQ));
   arr = sorted(arr, ss.key, ss.dir, charmKeyFns);
   return `
     <h2><span class="grow">護石（${st.charms.length}件）</span>
       <button class="btn sm" data-act="c-import">インポート</button>
       <button class="btn sm primary" data-act="c-new">＋登録</button></h2>
     <div class="card">
-      <input type="search" placeholder="スキル名で絞り込み" data-act="charm-q" value="${esc(st.ui.charmQ || "")}" style="width:100%">
+      <input type="search" placeholder="スキル名の一部・読みで絞り込み" data-act="charm-q" value="${esc(st.ui.charmQ || "")}" style="width:100%">
       ${sortBar("charm", CHARM_SORTS, "added", "desc")}
     </div>
     <div class="list cols" style="margin-top:10px" id="charm-list">${arr.map((x) => `<div class="item ${x.c.enabled === false ? "off" : ""}" data-cid="${x.c.id}">
@@ -840,9 +836,9 @@ const DECO_SORTS = [["skill", "スキル名"], ["name", "名前"], ["size", "ス
 function decoView() {
   const st = S();
   const ss = sortState("deco", "skill", "asc");
-  const nq = norm(st.ui.decoQ || "");
+
   let arr = M.decos;
-  if (nq) arr = arr.filter((d) => norm(d.name).includes(nq) || norm(d.skill).includes(nq));
+  if (st.ui.decoQ) arr = arr.filter((d) => matchAny([d.name, d.skill], st.ui.decoQ));
   if (st.ui.decoSize) arr = arr.filter((d) => d.size === st.ui.decoSize);
   arr = sorted(arr, ss.key, ss.dir, decoKeyFns);
   return `
@@ -1247,7 +1243,7 @@ async function init() {
   for (const s of M.skills) SKILL[s.name] = s;
   for (const a of M.armors) ARMOR[a.id] = a;
   for (const d of M.decos) DECO[d.name] = d;
-  CATS = [...new Set(M.skills.map((s) => s.cat))];
+  CATS = [...new Set(M.skills.map((s) => s.cat))].filter((c) => c !== "汎用錬成スキル");
   document.getElementById("appbar-sub").textContent = "Ver.16対応";
   // 存在しなくなったスキルを条件から除去
   update((s) => { s.conds = s.conds.filter((c) => SKILL[c.skill]); });
