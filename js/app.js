@@ -48,7 +48,7 @@ function toast(msg) {
   t.textContent = msg;
   t.classList.add("show");
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => t.classList.remove("show"), 1800);
+  toast._t = setTimeout(() => t.classList.remove("show"), 3500); // 読み切れるよう3〜5秒の範囲で表示
 }
 const weaponTypes = () => (isW() ? M.weaponTypes : SB_WEAPON_TYPES);
 
