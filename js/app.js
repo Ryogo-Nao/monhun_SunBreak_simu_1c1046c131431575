@@ -1239,11 +1239,12 @@ function decoView() {
       ${isW() ? `<div class="seg" style="margin-top:6px" data-deco-type>${[["", "すべて"], ["W", "武器用"], ["A", "防具用"]].map(([k, l]) => `<button data-dt="${k}" class="${(st.ui.decoType || "") === k ? "on" : ""}">${l}</button>`).join("")}</div>` : ""}
       ${sortBar("deco", [["skill", "スキル名"], ["name", "名前"], ["size", "スロットLv"], ["lv", "スキルLv"], ["count", "所持数"], ...(isW() ? [["type", "種別（武器/防具）"]] : [])], "skill", "asc")}
       <div class="row"><button class="btn sm" data-act="deco-unlimited">全て無制限</button><button class="btn sm" data-act="deco-zero">表示中を0個に</button></div>
+      <p class="muted small" style="margin:6px 0 0">所持数: 空欄（∞）＝無制限</p>
     </div>
     <div class="list cols" style="margin-top:10px" id="deco-list">${arr.map((d) => {
       const c = st.decoCount[d.name];
       return `<div class="item" data-dn="${esc(d.name)}"><div class="ttl">${slotTag(d.size, d.type)}<span class="grow">${esc(d.name)}</span>
-        <input type="number" min="0" inputmode="numeric" data-act="deco-count" value="${c == null ? "" : c}" placeholder="∞" style="width:72px"></div>
+        <input type="number" min="0" inputmode="numeric" data-act="deco-count" value="${c == null ? "" : c}" placeholder="∞" aria-label="${esc(d.name)}の所持数（空欄で無制限）" style="width:72px"></div>
         <div class="meta">${isW() ? `<span class="tag">${d.type === "W" ? "武器用" : "防具用"}</span>` : ""}${Object.entries(d.skills).map(([k, v]) => `${esc(k)} +${v}`).join(" ／ ")}</div></div>`;
     }).join("")}</div>`;
 }
