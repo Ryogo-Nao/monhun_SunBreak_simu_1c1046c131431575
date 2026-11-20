@@ -202,8 +202,20 @@ function openModal({ title, body, foot = "", onMount, wide }) {
     <div class="mh"><h3>${esc(title)}</h3><button class="btn sm" data-close>閉じる</button></div>
     <div class="mb">${body}</div>${foot ? `<div class="mf">${foot}</div>` : ""}</div>`;
   const close = () => back.remove();
+  // 登録・編集など保存ボタンのある画面は、入力を変えた後に外側をうっかり押しても閉じない（確認する）
+  const hasSave = !!back.querySelector("[data-save], [data-go]");
+  let dirty = false;
+  const markDirty = (e) => { if (!e.target.closest || !e.target.closest(".modal .mf")) dirty = true; };
+  back.addEventListener("input", markDirty);
+  back.addEventListener("change", markDirty);
+  const closeSafely = () => {
+    if (hasSave && dirty && !confirm("入力内容を破棄して閉じますか？")) return;
+    close();
+  };
   back.addEventListener("click", (e) => {
-    if (e.target === back || e.target.closest("[data-close]")) close();
+    if (e.target.closest("[data-close]")) close();
+    else if (e.target === back) closeSafely();
+    else if (e.target.closest(".mb button")) dirty = true; // スキル追加・✕などのボタン操作も変更とみなす
   });
   modalRoot.appendChild(back);
   onMount && onMount(back.querySelector(".modal"), close);
