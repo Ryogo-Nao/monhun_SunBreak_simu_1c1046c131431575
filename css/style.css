@@ -15,6 +15,7 @@
   --slot: #334155;
   --bar: #1c2230;
   --bar-ink: #f8fafc;
+  --switch-off: #8b93a3; /* スイッチOFFの地色: カード地と3:1以上 */
   --shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 2px 8px rgba(0, 0, 0, .05);
   --tabbar-h: 58px;
   /* ヘッダー: 本体の高さ / ステータスバー分 / ステータスバー下の余白 */
@@ -28,14 +29,14 @@
   :root:not([data-theme="light"]) {
     --bg: #11141b; --card: #1a1f2a; --ink: #e8ebf1; --ink2: #9aa3b5; --line: #2b3242;
     --accent: #fb923c; --accent-ink: #1b1f29; --accent-soft: #3b2417; --ok: #4ade80; --ok-soft: #14321f;
-    --ng: #f87171; --ng-soft: #3a1717; --chip: #252c3a; --slot: #cbd5e1; --bar: #0b0e14; --bar-ink: #f1f5f9;
+    --ng: #f87171; --ng-soft: #3a1717; --chip: #252c3a; --slot: #cbd5e1; --bar: #0b0e14; --bar-ink: #f1f5f9; --switch-off: #687286;
     --shadow: none; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #11141b; --card: #1a1f2a; --ink: #e8ebf1; --ink2: #9aa3b5; --line: #2b3242;
   --accent: #fb923c; --accent-ink: #1b1f29; --accent-soft: #3b2417; --ok: #4ade80; --ok-soft: #14321f;
-  --ng: #f87171; --ng-soft: #3a1717; --chip: #252c3a; --slot: #cbd5e1; --bar: #0b0e14; --bar-ink: #f1f5f9;
+  --ng: #f87171; --ng-soft: #3a1717; --chip: #252c3a; --slot: #cbd5e1; --bar: #0b0e14; --bar-ink: #f1f5f9; --switch-off: #687286;
   --shadow: none; color-scheme: dark;
 }
 
@@ -136,11 +137,11 @@ label.inline { display: inline-flex; align-items: center; gap: 6px; }
 .switch + .switch { border-top: 1px solid var(--line); }
 .switch .txt { flex: 1; }
 .switch .txt small { display: block; color: var(--ink2); font-size: 12px; }
-.switch input { appearance: none; -webkit-appearance: none; width: 46px; height: 28px; border-radius: 14px; background: var(--line); position: relative; flex: none; margin: 0; cursor: pointer; transition: background .15s; }
+.switch input { appearance: none; -webkit-appearance: none; width: 46px; height: 28px; border-radius: 14px; background: var(--switch-off); position: relative; flex: none; margin: 0; cursor: pointer; transition: background .15s; }
 .switch input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: transform .15s; }
 .switch input:checked { background: var(--ok); }
 .switch input:checked::after { transform: translateX(18px); }
-input.mini-switch { appearance: none; -webkit-appearance: none; width: 38px; height: 22px; border-radius: 11px; background: var(--line); position: relative; margin: 0; cursor: pointer; flex: none; }
+input.mini-switch { appearance: none; -webkit-appearance: none; width: 38px; height: 22px; border-radius: 11px; background: var(--switch-off); position: relative; margin: 0; cursor: pointer; flex: none; }
 input.mini-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; }
 input.mini-switch:checked { background: var(--accent); }
 input.mini-switch:checked::after { transform: translateX(16px); }
