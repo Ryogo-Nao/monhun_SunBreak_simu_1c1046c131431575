@@ -88,10 +88,11 @@ def main():
         s = r["スキル系統1"].strip()
         if s not in skills:  # 「Nスロ珠」等の疑似装飾品は除外
             continue
-        decos.append({"name": r["名前"], "size": num(r["スロットサイズ"]), "skill": s,
-                      "lv": num(r["スキル値1"]), "rarity": num(r["レア度"])})
+        decos.append({"name": r["名前"], "size": num(r["スロットサイズ"]), "type": "A",
+                      "skills": {s: num(r["スキル値1"])}, "rarity": num(r["レア度"])})
 
     data = {
+        "game": "sb",
         "version": "Sunbreak Ver.16 (RiseSim CSV 2024/10/19)",
         "skills": [skills[n] for n in order],
         "armors": armors,

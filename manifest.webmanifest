@@ -1,6 +1,6 @@
 {
-  "name": "サンブレイク 手持ち装備シミュ",
-  "short_name": "SB手持ちシミュ",
+  "name": "MH手持ち装備シミュ（サンブレイク／ワイルズ）",
+  "short_name": "MH手持ちシミュ",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

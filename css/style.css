@@ -218,3 +218,15 @@ button.chip.on { background: var(--accent); color: var(--accent-ink); }
 .kv dt { color: var(--ink2); }
 .kv dd { margin: 0; }
 a { color: var(--accent); }
+
+/* ワイルズ: 武器用スロット（丸）と防具用スロット（四角） */
+.slot.w { border-radius: 50%; border-color: #b45309; color: #b45309; min-width: 19px; }
+.slot.w.s3 { background: #b45309; color: #fff; }
+.slot.w.free { border-color: var(--ok); color: var(--ok); }
+.slot.w.free.s3 { background: var(--ok); color: var(--card); }
+.chip.dim { opacity: .55; }
+
+/* 長い選択肢でも横にはみ出さない */
+.grid2 > * { min-width: 0; }
+.form-row select.grow, .form-row input.grow { flex: 1 1 0; width: 0; min-width: 0; }
+select { text-overflow: ellipsis; }

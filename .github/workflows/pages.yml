@@ -18,7 +18,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: node test/solver.test.mjs && node test/search.test.mjs
+      - run: node test/solver.test.mjs && node test/search.test.mjs && node test/wilds.test.mjs
   deploy:
     needs: test
     runs-on: ubuntu-latest
@@ -31,7 +31,7 @@ jobs:
         run: |
           mkdir _site
           cp -r index.html manifest.webmanifest sw.js .nojekyll css js data icons _site/
-          rm -rf _site/data/source
+          rm -rf _site/data/source _site/data/wilds/source
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
       - id: deployment

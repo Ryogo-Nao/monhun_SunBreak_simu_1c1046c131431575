@@ -58,7 +58,7 @@ for (let i = 1; i < out.results.length; i++) {
 }
 
 // 4) 装飾品の所持数制限
-const limited = decos.map((d) => ({ ...d, count: d.skill === "攻撃" ? 0 : Infinity }));
+const limited = decos.map((d) => ({ ...d, count: d.skills["攻撃"] ? 0 : Infinity }));
 conds = [{ skill: "攻撃", level: 7, required: true }];
 out = simulate({ parts: parts(), decos: limited, conds, skillMax, opts: { limit: 50 } });
 verify(out, conds);
