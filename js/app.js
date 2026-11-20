@@ -296,10 +296,21 @@ function pickArmor({ onPick, part = "head" }) {
   });
 }
 
+// ---- フォーム部品（ラベルは上・入力欄は全幅、の統一レイアウト） ----
+const fld = (label, ctl) => `<div class="field"><div class="field-lbl">${label}</div><div class="field-ctl">${ctl}</div></div>`;
+const fsec = (title, body) => `<section class="fsec">${title ? `<h4>${title}</h4>` : ""}${body}</section>`;
+// 数値のプルダウンは「上ほど大きい値」（降順）で統一
+function lvOptions(max, cur, label = (v) => "Lv" + v) {
+  let h = "";
+  for (let v = max; v >= 1; v--) h += `<option value="${v}" ${v === cur ? "selected" : ""}>${esc(label(v))}</option>`;
+  return h;
+}
+function slotOptions(max, cur) {
+  return lvOptions(max, cur) + `<option value="0" ${!cur ? "selected" : ""}>なし</option>`;
+}
 function slotSelects(slots, name = "slot", max = G().slotMax) {
   const arr = (slots || []).slice().sort((a, b) => b - a);
-  const vals = Array.from({ length: max + 1 }, (_, i) => i);
-  return [0, 1, 2].map((i) => `<select data-${name}="${i}">${vals.map((v) => `<option value="${v}" ${(arr[i] || 0) === v ? "selected" : ""}>${v ? "Lv" + v : "なし"}</option>`).join("")}</select>`).join("");
+  return `<div class="g3">${[0, 1, 2].map((i) => `<select data-${name}="${i}" aria-label="スロット${i + 1}">${slotOptions(max, arr[i] || 0)}</select>`).join("")}</div>`;
 }
 function readSlots(m, name = "slot") {
   return [...m.querySelectorAll(`[data-${name}]`)].map((s) => +s.value).filter((v) => v > 0).sort((a, b) => b - a);
@@ -309,8 +320,8 @@ function typedSlotRows(slots, wslots) {
   const list = [...(wslots || []).map((s) => [s, "W"]), ...(slots || []).map((s) => [s, "A"])];
   return [0, 1, 2].map((i) => {
     const [sz, ty] = list[i] || [0, "A"];
-    return `<div class="row" style="margin-bottom:4px"><select data-tsize="${i}">${[0, 1, 2, 3].map((v) => `<option value="${v}" ${sz === v ? "selected" : ""}>${v ? "Lv" + v : "なし"}</option>`).join("")}</select>
-      <select data-ttype="${i}"><option value="A" ${ty === "A" ? "selected" : ""}>防具用</option><option value="W" ${ty === "W" ? "selected" : ""}>武器用</option></select></div>`;
+    return `<div class="g2"><select data-tsize="${i}" aria-label="スロット${i + 1}">${slotOptions(3, sz)}</select>
+      <select data-ttype="${i}" aria-label="スロット${i + 1}の種別"><option value="A" ${ty === "A" ? "selected" : ""}>防具用</option><option value="W" ${ty === "W" ? "selected" : ""}>武器用</option></select></div>`;
   }).join("");
 }
 function readTypedSlots(m) {
@@ -342,7 +353,7 @@ function renderSearch() {
         <button class="btn sm icon danger" data-act="cond-del" aria-label="削除">✕</button>
       </span>
       <span class="ctl2">
-        <select data-act="cond-lv">${Array.from({ length: max }, (_, k) => k + 1).map((v) => `<option value="${v}" ${v === c.level ? "selected" : ""}>${esc(lvLabel(c.skill, v))}</option>`).join("")}</select>
+        <select data-act="cond-lv" aria-label="${esc(c.skill)}のLv">${lvOptions(max, c.level, (v) => lvLabel(c.skill, v))}</select>
         <label class="inline"><input type="checkbox" class="mini-switch" data-act="cond-req" ${c.required ? "checked" : ""}> 必須</label>
       </span></div>`;
   }).join("") : '<p class="muted">スキル未選択</p>';
@@ -367,7 +378,7 @@ function renderSearch() {
       <label class="switch"><span class="txt">装飾品の所持数を反映</span><input type="checkbox" data-opt="useDecoCount" ${o.useDecoCount ? "checked" : ""}></label>
       <label class="switch"><span class="txt">下位互換を除外（高速）</span><input type="checkbox" data-opt="pruneDominated" ${o.pruneDominated ? "checked" : ""}></label>
       <label class="switch"><span class="txt">希望スキル全達成のみ</span><input type="checkbox" data-opt="onlyFullSoft" ${o.onlyFullSoft ? "checked" : ""}></label>
-      <div class="form-row"><span class="lbl">最大件数</span><select data-act="limit">${[500, 1000, 5000, 20000, 100000].map((v) => `<option value="${v}" ${o.limit === v ? "selected" : ""}>${v.toLocaleString()}件</option>`).join("")}</select></div>
+      ${fld("最大件数", `<select data-act="limit">${[100000, 20000, 5000, 1000, 500].map((v) => `<option value="${v}" ${o.limit === v ? "selected" : ""}>${v.toLocaleString()}件</option>`).join("")}</select>`)}
     </div>
   </div>
   </div>
@@ -383,12 +394,12 @@ function sbWeaponSection() {
   const weapons = S().weapons;
   return `<h2>武器</h2>
     <div class="card">
-      <div class="form-row"><select data-act="weapon-sel" class="grow">
+      <div class="field"><select data-act="weapon-sel" aria-label="武器">
         <option value="manual" ${o.weapon === "manual" ? "selected" : ""}>スロット指定</option>
         ${weapons.length ? `<option value="all" ${o.weapon === "all" ? "selected" : ""}>登録武器すべて（${weapons.filter((w) => w.enabled !== false).length}）</option>` : ""}
         ${weapons.map((w) => `<option value="${w.id}" ${o.weapon === w.id ? "selected" : ""}>${esc(w.name)}（${(w.slots || []).join("-") || "スロなし"}）</option>`).join("")}
       </select></div>
-      <div class="form-row ${o.weapon === "manual" ? "" : "hide"}"><span class="lbl">スロット</span>${slotSelects(o.weaponSlots, "wslot")}</div>
+      <div class="${o.weapon === "manual" ? "" : "hide"}">${fld("スロット", slotSelects(o.weaponSlots, "wslot"))}</div>
     </div>`;
 }
 
@@ -404,15 +415,15 @@ function wildsWeaponSection() {
   const wlabel = (w) => `${w.name}（${w.slots.join("-") || "スロなし"}${Object.keys(w.skills).length ? " / " + Object.entries(w.skills).map(([k, v]) => k + v).join(" ") : ""}）`;
   return `<h2>武器</h2>
     <div class="card">
-      <div class="form-row"><span class="lbl">武器種</span><select data-act="wtype" class="grow">${M.weaponTypes.map((t) => `<option ${t === type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
-      <div class="form-row"><select data-act="weapon-sel" class="grow">
+      ${fld("武器種", `<select data-act="wtype">${M.weaponTypes.map((t) => `<option ${t === type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>`)}
+      <div class="field"><div class="field-lbl">武器</div><select data-act="weapon-sel">
         ${opt("type", `${type}すべて（${(o.includeUnowned ? all.length : owned.length) + (o.includeQurious ? arts.filter((a) => a.enabled !== false).length : 0)}）`)}
         ${opt("manual", "スロット指定")}
         ${arts.length ? `<optgroup label="アーティア">${arts.map((a) => opt("ar:" + a.id, artianItem(a).name + "（" + Object.keys(a.skills || {}).join("・") + "）")).join("")}</optgroup>` : ""}
         ${owned.length ? `<optgroup label="所持武器">${owned.map((w) => opt(w.id, wlabel(w))).join("")}</optgroup>` : ""}
         <optgroup label="すべての武器">${all.map((w) => opt(w.id, wlabel(w))).join("")}</optgroup>
       </select></div>
-      <div class="form-row ${wsel === "manual" ? "" : "hide"}"><span class="lbl">スロット</span>${slotSelects(o.weaponSlots, "wslot", 3)}</div>
+      <div class="${wsel === "manual" ? "" : "hide"}">${fld("スロット", slotSelects(o.weaponSlots, "wslot", 3))}</div>
     </div>`;
 }
 
@@ -774,12 +785,10 @@ function quriousView() {
       ${sortBar("qurious", Q_SORTS, "added", "desc")}
     </div>
     <div class="list cols" style="margin-top:10px">${arr.map((x) => {
-      const delta = x.q.delta || {};
       return `<div class="item ${x.q.enabled === false ? "off" : ""}" data-qid="${x.q.id}">
         <div class="ttl"><span class="tag part">${PART_LABEL[x.part]}</span><span class="grow">${esc(x.name)}${x.note ? ` <span class="muted small">${esc(x.note)}</span>` : ""}</span>${slotsHTML(x.slots, { pad: true })}</div>
-        <div class="meta"><span>防御${x.def}${x.q.defDelta ? `（${x.q.defDelta > 0 ? "+" : ""}${x.q.defDelta}）` : ""}</span><span>${RES_LABEL.map((l, i) => l + x.res[i]).join(" ")}</span></div>
+        <div class="meta"><span>防御${x.def}</span><span>${RES_LABEL.map((l, i) => l + x.res[i]).join(" ")}</span></div>
         <div class="chips">${skillChips(x.skills)}</div>
-        ${Object.keys(delta).length ? `<div class="chips" style="margin-top:4px"><span class="muted small">錬成:</span>${skillChips(delta, { delta: true })}</div>` : ""}
         <div class="acts">
           <label class="inline"><input type="checkbox" class="mini-switch" data-act="q-enable" ${x.q.enabled !== false ? "checked" : ""}>検索対象</label>
           <span class="right"></span>
@@ -790,9 +799,34 @@ function quriousView() {
     }).join("") || '<p class="muted">未登録</p>'}</div>`;
 }
 
+// 傀異錬成防具の登録・編集。入力は「錬成後の実際の値」（ゲーム画面に表示される値）で行い、
+// 保存時にベース防具との差分（delta）へ変換する
 function quriousForm(q, base, asCopy = false) {
-  const cur = q ? JSON.parse(JSON.stringify(q)) : { id: uid(), base: base?.id, slots: base ? base.slots.slice() : [], delta: {}, defDelta: 0, resDelta: [0, 0, 0, 0, 0], note: "", enabled: true, createdAt: Date.now() };
+  const src = q ? JSON.parse(JSON.stringify(q)) : null;
+  const id = src ? src.id : uid();
+  const createdAt = src?.createdAt || Date.now();
+  const enabled = src ? src.enabled !== false : true;
   const isNew = !q || asCopy;
+  // 編集用の状態（絶対値）
+  const cur = { base: src ? src.base : base?.id, slots: [], skills: {}, def: 0, res: [0, 0, 0, 0, 0], note: src?.note || "" };
+  const loadFromBase = (keepSkills) => {
+    const b = ARMOR[cur.base];
+    if (!b) return;
+    if (!keepSkills) {
+      cur.slots = b.slots.slice();
+      cur.skills = { ...b.skills };
+      cur.def = b.def;
+      cur.res = b.res.slice();
+    }
+  };
+  if (src && ARMOR[src.base]) {
+    const it = quriousItem(src);
+    cur.slots = it.slots.slice();
+    cur.skills = { ...it.skills };
+    cur.def = it.def;
+    cur.res = it.res.slice();
+  } else loadFromBase(false);
+
   openModal({
     title: asCopy ? "傀異錬成防具を複製" : isNew ? "傀異錬成防具を登録" : "傀異錬成防具を編集",
     body: '<div data-form></div>',
@@ -801,60 +835,65 @@ function quriousForm(q, base, asCopy = false) {
       const f = m.querySelector("[data-form]");
       const render = () => {
         const b = ARMOR[cur.base];
-        const it = b ? quriousItem(cur) : null;
-        f.innerHTML = `
-          <div class="form-row"><span class="lbl">ベース防具</span><span class="grow"><b>${b ? esc(b.name) : "未選択"}</b>${b ? `<br><span class="muted small">${PART_LABEL[b.part]} / 防御${b.def} / </span>${slotsHTML(b.slots)} <span class="muted small">${Object.entries(b.skills).map(([k, v]) => esc(k) + v).join(" ")}</span>` : ""}</span>
-            <button class="btn sm" data-pick-base>${b ? "変更" : "選択"}</button></div>
-          ${b ? `
-          <div class="form-row"><span class="lbl">錬成後スロット</span>${slotSelects(cur.slots, "slot")}</div>
-          <div class="form-row"><span class="lbl">スキル変化</span><span class="grow">
-            ${Object.entries(cur.delta).map(([k, v]) => `<div class="row" style="margin-bottom:4px" data-dk="${esc(k)}"><span class="grow">${esc(k)}</span>
-              <select data-delta>${[-3, -2, -1, 1, 2, 3, 4].map((n) => `<option value="${n}" ${n === v ? "selected" : ""}>${n > 0 ? "+" + n : n}</option>`).join("")}</select>
-              <button class="btn sm icon danger" data-del-delta>✕</button></div>`).join("") || '<span class="muted small">なし</span>'}
-            <div class="row"><button class="btn sm" data-add-delta>＋スキル追加/削減</button>
-            ${Object.keys(b.skills).map((k) => cur.delta[k] == null ? `<button class="btn sm" data-minus="${esc(k)}">${esc(k)} −1</button>` : "").join("")}</div>
-          </span></div>
-          <div class="form-row"><span class="lbl">防御力増減</span><input type="number" data-def value="${cur.defDelta || 0}"></div>
-          <div class="form-row"><span class="lbl">耐性増減</span>${RES_LABEL.map((l, i) => `<label class="inline small">${l}<input type="number" data-res="${i}" value="${cur.resDelta?.[i] || 0}" style="width:56px"></label>`).join("")}</div>
-          <div class="form-row"><span class="lbl">メモ</span><input type="text" class="grow" data-note value="${esc(cur.note || "")}" placeholder="任意（例: 攻撃特化）"></div>
-          <div class="card" style="margin-top:8px"><div class="muted small">錬成後</div>
-            <div class="row">${slotsHTML(it.slots, { pad: true })}<span class="muted small">防御${it.def}</span></div>
-            <div class="chips" style="margin-top:4px">${skillChips(it.skills)}</div></div>` : ""}`;
+        const baseSec = fsec("ベース防具", `<div class="pick-row"><span class="grow">${b
+          ? `<b>${esc(b.name)}</b><br><span class="muted small">${PART_LABEL[b.part]}・防御${b.def}</span> ${slotsHTML(b.slots)}<div class="chips" style="margin-top:4px">${skillChips(b.skills)}</div>`
+          : '<span class="muted">未選択</span>'}</span>
+          <button class="btn sm" data-pick-base>${b ? "変更" : "選択"}</button></div>`);
+        if (!b) { f.innerHTML = baseSec; return; }
+        const skillRows = Object.entries(cur.skills).map(([k, v]) => {
+          const max = Math.max(SKILL[k]?.max || 7, v);
+          return `<div class="skill-row" data-sk="${esc(k)}"><span class="nm">${esc(k)}</span>
+            <select data-sklv aria-label="${esc(k)}のLv">${lvOptions(max, v)}</select>
+            <button class="btn sm icon danger" data-del-sk aria-label="${esc(k)}を外す">✕</button></div>`;
+        }).join("") || '<p class="muted small" style="margin:4px 0">なし</p>';
+        f.innerHTML = baseSec +
+          fsec("スロット", slotSelects(cur.slots, "slot")) +
+          fsec("スキル", `${skillRows}<button class="btn sm" data-add-sk style="margin-top:6px">＋スキル追加</button>`) +
+          fsec("防御・耐性", fld("防御力", `<input type="number" inputmode="numeric" data-def value="${cur.def}">`) +
+            `<div class="g5">${RES_LABEL.map((l, i) => `<label class="cell"><span>${l}耐性</span><input type="number" inputmode="numeric" data-res="${i}" value="${cur.res[i]}"></label>`).join("")}</div>`) +
+          fsec("", fld("メモ", `<input type="text" data-note value="${esc(cur.note)}" placeholder="例: 攻撃特化">`));
       };
       const sync = () => {
         if (!ARMOR[cur.base]) return;
         cur.slots = readSlots(f, "slot");
-        f.querySelectorAll("[data-dk]").forEach((row) => { cur.delta[row.dataset.dk] = +row.querySelector("[data-delta]").value; });
-        cur.defDelta = +(f.querySelector("[data-def]")?.value || 0);
-        cur.resDelta = [0, 1, 2, 3, 4].map((i) => +(f.querySelector(`[data-res="${i}"]`)?.value || 0));
+        f.querySelectorAll("[data-sk]").forEach((row) => { cur.skills[row.dataset.sk] = +row.querySelector("[data-sklv]").value; });
+        const num = (el, d) => (el && el.value !== "" ? +el.value : d);
+        cur.def = num(f.querySelector("[data-def]"), ARMOR[cur.base].def);
+        cur.res = [0, 1, 2, 3, 4].map((i) => num(f.querySelector(`[data-res="${i}"]`), ARMOR[cur.base].res[i]));
         cur.note = f.querySelector("[data-note]")?.value || "";
       };
       render();
       if (!cur.base) setTimeout(() => f.querySelector("[data-pick-base]").click(), 0);
-      f.addEventListener("change", () => { sync(); render(); });
+      f.addEventListener("change", (e) => { if (e.target.matches("select")) { sync(); render(); } });
       f.addEventListener("click", (e) => {
         if (e.target.closest("[data-pick-base]")) {
           sync();
-          pickArmor({ part: ARMOR[cur.base]?.part || S().ui.armorPart || "head", onPick(a) { cur.base = a.id; cur.slots = a.slots.slice(); cur.delta = {}; render(); } });
-        } else if (e.target.closest("[data-add-delta]")) {
+          pickArmor({ part: ARMOR[cur.base]?.part || S().ui.armorPart || "head", onPick(a) { cur.base = a.id; loadFromBase(false); render(); } });
+        } else if (e.target.closest("[data-add-sk]")) {
           sync();
-          pickSkill({ title: "錬成で変化したスキル", onPick(n) { cur.delta[n] = cur.delta[n] || 1; render(); } });
-        } else if (e.target.closest("[data-del-delta]")) {
+          pickSkill({ title: "スキルを追加", onPick(n) { if (!cur.skills[n]) cur.skills[n] = 1; render(); } });
+        } else if (e.target.closest("[data-del-sk]")) {
           sync();
-          delete cur.delta[e.target.closest("[data-dk]").dataset.dk];
-          render();
-        } else if (e.target.closest("[data-minus]")) {
-          sync();
-          cur.delta[e.target.closest("[data-minus]").dataset.minus] = -1;
+          delete cur.skills[e.target.closest("[data-sk]").dataset.sk];
           render();
         }
       });
       m.querySelector("[data-save]").addEventListener("click", () => {
         sync();
-        if (!ARMOR[cur.base]) { toast("ベース防具を選択してください"); return; }
+        const b = ARMOR[cur.base];
+        if (!b) { toast("ベース防具を選択してください"); return; }
+        const delta = {};
+        for (const k of new Set([...Object.keys(b.skills), ...Object.keys(cur.skills)])) {
+          const d = (cur.skills[k] || 0) - (b.skills[k] || 0);
+          if (d) delta[k] = d;
+        }
+        const rec = {
+          id, base: b.id, slots: cur.slots, delta, defDelta: cur.def - b.def,
+          resDelta: cur.res.map((v, i) => v - b.res[i]), note: cur.note, enabled, createdAt,
+        };
         update((st) => {
-          const i = st.qurious.findIndex((x) => x.id === cur.id);
-          if (i >= 0) st.qurious[i] = cur; else st.qurious.push(cur);
+          const i = st.qurious.findIndex((x) => x.id === rec.id);
+          if (i >= 0) st.qurious[i] = rec; else st.qurious.push(rec);
         });
         close();
         toast("保存しました");
@@ -880,7 +919,7 @@ function artianView() {
   return `
     <h2><span class="grow">アーティア武器（${st.artians.length}件）</span><button class="btn sm primary" data-act="ar-new">＋登録</button></h2>
     <div class="card">
-      <div class="form-row"><span class="lbl">武器種</span><select data-act="artian-type" class="grow"><option value="">すべて</option>${M.weaponTypes.map((t) => `<option ${t === ft ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
+      <div class="field"><div class="field-lbl">武器種</div><select data-act="artian-type"><option value="">すべて</option>${M.weaponTypes.map((t) => `<option ${t === ft ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
       ${sortBar("artian", [["added", "登録順"], ["type", "武器種"], ["name", "名前"], ["slotSum", "スロット合計Lv"]], "added", "desc")}
     </div>
     <div class="list cols" style="margin-top:10px">${arr.map((x) => `<div class="item ${x.a.enabled === false ? "off" : ""}" data-arid="${x.a.id}">
@@ -897,13 +936,12 @@ function artianForm(a, asCopy = false) {
   const curS = Object.keys(cur.skills).find((k) => SKILL[k]?.kind === "S") || "";
   openModal({
     title: asCopy ? "アーティア武器を複製" : a ? "アーティア武器を編集" : "アーティア武器を登録",
-    body: `<div class="form-row"><span class="lbl">武器種</span><select data-type class="grow">${M.weaponTypes.map((t) => `<option ${t === cur.type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
-      <div class="form-row"><span class="lbl">名前</span><input type="text" class="grow" data-name value="${esc(cur.name)}" placeholder="例: アーティアセイバー 火会心"></div>
-      <div class="form-row"><span class="lbl">グループスキル</span><select data-g class="grow"><option value="">なし</option>${groups.map((s) => `<option value="${esc(s.name)}" ${s.name === curG ? "selected" : ""}>${esc(s.name)}（${esc(s.names[0])}）</option>`).join("")}</select></div>
-      <div class="form-row"><span class="lbl">シリーズスキル</span><select data-s class="grow"><option value="">なし</option>${series.map((s) => `<option value="${esc(s.name)}" ${s.name === curS ? "selected" : ""}>${esc(s.name)}（${esc(s.names.join("/"))}）</option>`).join("")}</select></div>
-      <div class="form-row"><span class="lbl">武器スロット</span>${slotSelects(cur.wslots, "slot", 3)}</div>
-      <div class="form-row"><span class="lbl">メモ</span><input type="text" class="grow" data-note value="${esc(cur.note || "")}" placeholder="例: 火属性 会心強化×3"></div>
-`,
+    body: fsec("武器", fld("武器種", `<select data-type>${M.weaponTypes.map((t) => `<option ${t === cur.type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>`) +
+        fld("名前", `<input type="text" data-name value="${esc(cur.name)}" placeholder="例: アーティアセイバー 火会心">`)) +
+      fsec("スキル", fld("グループスキル", `<select data-g><option value="">なし</option>${groups.map((s) => `<option value="${esc(s.name)}" ${s.name === curG ? "selected" : ""}>${esc(s.name)}（${esc(s.names[0])}）</option>`).join("")}</select>`) +
+        fld("シリーズスキル", `<select data-s><option value="">なし</option>${series.map((s) => `<option value="${esc(s.name)}" ${s.name === curS ? "selected" : ""}>${esc(s.name)}（${esc(s.names.join("/"))}）</option>`).join("")}</select>`)) +
+      fsec("スロット", slotSelects(cur.wslots, "slot", 3)) +
+      fsec("", fld("メモ", `<input type="text" data-note value="${esc(cur.note || "")}" placeholder="例: 火属性 会心強化×3">`)),
     foot: '<button class="btn" data-close>キャンセル</button><button class="btn primary" data-save>保存</button>',
     onMount(m, close) {
       m.querySelector("[data-save]").addEventListener("click", () => {
@@ -1006,15 +1044,14 @@ function charmForm(c) {
     onMount(m, close) {
       const f = m.querySelector("[data-form]");
       const render = () => {
-        f.innerHTML = cur.skills.map(([n, v], i) => {
+        f.innerHTML = fsec("スキル", cur.skills.map(([n, v], i) => {
           const max = SKILL[n] ? (isW() && M.charmSkillMax?.[n]) || SKILL[n].max : 7;
-          return `<div class="form-row"><span class="lbl">スキル${i + 1}</span><button class="btn grow" data-pick="${i}" style="justify-content:flex-start">${n ? esc(n) : '<span class="muted">選択…</span>'}</button>
-            <select data-lv="${i}" ${n ? "" : "disabled"}>${Array.from({ length: Math.max(max, v || 1) }, (_, k) => k + 1).map((x) => `<option value="${x}" ${x === v ? "selected" : ""}>Lv${x}</option>`).join("")}</select>
-            ${n ? `<button class="btn sm icon danger" data-clear="${i}">✕</button>` : ""}</div>`;
-        }).join("") + (isW()
-          ? `<div class="form-row"><span class="lbl">スロット</span><span class="grow">${typedSlotRows(cur.slots, cur.wslots)}</span></div>`
-          : `<div class="form-row"><span class="lbl">スロット</span>${slotSelects(cur.slots, "slot")}</div>`) +
-          `<div class="form-row"><span class="lbl">メモ</span><input type="text" class="grow" data-note value="${esc(cur.note || "")}"></div>`;
+          return `<div class="skill-row"><button class="btn pick" data-pick="${i}">${n ? esc(n) : '<span class="muted">スキル' + (i + 1) + 'を選択</span>'}</button>
+            <select data-lv="${i}" ${n ? "" : "disabled"} aria-label="スキル${i + 1}のLv">${lvOptions(Math.max(max, v || 1), v)}</select>
+            ${n ? `<button class="btn sm icon danger" data-clear="${i}" aria-label="スキル${i + 1}を外す">✕</button>` : '<span></span>'}</div>`;
+        }).join("")) +
+          fsec(isW() ? "スロット（サイズ・種別）" : "スロット", isW() ? typedSlotRows(cur.slots, cur.wslots) : slotSelects(cur.slots, "slot")) +
+          fsec("", fld("メモ", `<input type="text" data-note value="${esc(cur.note || "")}">`));
       };
       const sync = () => {
         cur.skills.forEach((s, i) => { const el = f.querySelector(`[data-lv="${i}"]`); if (el && s[0]) s[1] = +el.value; });
@@ -1079,10 +1116,10 @@ function weaponForm(w) {
   const cur = w ? JSON.parse(JSON.stringify(w)) : { id: uid(), name: "", type: SB_WEAPON_TYPES[0], slots: [], note: "", enabled: true, createdAt: Date.now() };
   openModal({
     title: w ? "武器を編集" : "武器を登録",
-    body: `<div class="form-row"><span class="lbl">名前</span><input type="text" class="grow" data-name value="${esc(cur.name)}" placeholder="例: 天上天下天地無双刀"></div>
-      <div class="form-row"><span class="lbl">武器種</span><select data-type>${SB_WEAPON_TYPES.map((t) => `<option ${t === cur.type ? "selected" : ""}>${t}</option>`).join("")}</select></div>
-      <div class="form-row"><span class="lbl">スロット</span>${slotSelects(cur.slots, "slot")}</div>
-      <div class="form-row"><span class="lbl">メモ</span><input type="text" class="grow" data-note value="${esc(cur.note || "")}"></div>`,
+    body: fsec("武器", fld("名前", `<input type="text" data-name value="${esc(cur.name)}" placeholder="例: 天上天下天地無双刀">`) +
+        fld("武器種", `<select data-type>${SB_WEAPON_TYPES.map((t) => `<option ${t === cur.type ? "selected" : ""}>${t}</option>`).join("")}</select>`)) +
+      fsec("スロット", slotSelects(cur.slots, "slot")) +
+      fsec("", fld("メモ", `<input type="text" data-note value="${esc(cur.note || "")}">`)),
     foot: '<button class="btn" data-close>キャンセル</button><button class="btn primary" data-save>保存</button>',
     onMount(m, close) {
       m.querySelector("[data-save]").addEventListener("click", () => {
@@ -1125,7 +1162,7 @@ function wildsWeaponView() {
   return `
     <h2>武器（所持 ${Object.keys(st.ownedWeapons).length}件）</h2>
     <div class="card">
-      <div class="form-row"><span class="lbl">武器種</span><select data-act="ww-type" class="grow">${M.weaponTypes.map((t) => `<option ${t === type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
+      <div class="field"><div class="field-lbl">武器種</div><select data-act="ww-type">${M.weaponTypes.map((t) => `<option ${t === type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
       <input type="search" placeholder="武器名・スキル名" data-act="ww-q" value="${esc(st.ui.wwQ || "")}" style="width:100%">
       <label class="switch"><span class="txt">所持のみ表示</span><input type="checkbox" data-ui="wwOwned" ${st.ui.wwOwned ? "checked" : ""}></label>
       ${sortBar("wweapon", [["no", "標準（データ順）"], ["name", "名前"], ["rarity", "レア度"], ["attack", "攻撃力"], ["slotSum", "スロット合計Lv"], ["slotCount", "スロット数"], ["slot3", "Lv3スロット数"], ["skillTotal", "スキルLv合計"], ["owned", "所持"]], "no", "asc")}
@@ -1288,8 +1325,8 @@ function renderSettings() {
     </div>
     <h2>基本設定</h2>
     <div class="card">
-      ${w ? "" : `<div class="form-row"><span class="lbl">性別</span><div class="seg grow" data-sex>${["指定なし", "男性", "女性"].map((l, i) => `<button data-sx="${i}" class="${st.settings.sex === i ? "on" : ""}">${l}</button>`).join("")}</div></div>`}
-      <div class="form-row"><span class="lbl">テーマ</span><div class="seg grow" data-theme>${[["", "自動"], ["light", "ライト"], ["dark", "ダーク"]].map(([k, l]) => `<button data-th="${k}" class="${(st.settings.theme || "") === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
+      ${w ? "" : `<div class="field"><div class="field-lbl">性別</div><div class="seg" data-sex>${["指定なし", "男性", "女性"].map((l, i) => `<button data-sx="${i}" class="${st.settings.sex === i ? "on" : ""}">${l}</button>`).join("")}</div></div>`}
+      <div class="field"><div class="field-lbl">テーマ</div><div class="seg" data-theme>${[["", "自動"], ["light", "ライト"], ["dark", "ダーク"]].map(([k, l]) => `<button data-th="${k}" class="${(st.settings.theme || "") === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
     </div>
     <h2>バックアップ（${G().short}）</h2>
     <div class="card">
@@ -1394,7 +1431,8 @@ function helpBody(key) {
       </ul>`;
     case "qurious": return `
       <ul>
-        <li><b>＋登録</b>: ベース防具を選び、錬成後のスロット、スキルの増減（−も可）、防御・耐性の増減を入力します。</li>
+        <li><b>＋登録</b>: ベース防具を選ぶと、そのスロット・スキル・防御・耐性が入った状態で始まります。ゲーム画面に表示される<b>錬成後の値</b>に書き換えてください。</li>
+        <li><b>スキル</b>: Lvを変える／<b>✕</b>で外す（錬成で消えたスキル）／<b>＋スキル追加</b>で追加します。</li>
         <li><b>インポート</b>: 泣きシミュ形式のCSVを貼り付けて一括登録します。<br><code>ベース防具名,防御,火,水,雷,氷,龍,スロ1増,スロ2増,スロ3増,スキル,増減,…</code></li>
         <li><b>検索対象</b>: OFFにすると検索に使いません。</li>
         <li><b>複製</b>: 似た錬成結果をコピーして登録できます。</li>
@@ -1428,7 +1466,7 @@ function helpBody(key) {
       </ul>` : `
       <ul>
         <li>武器はスキル計算ではスロットとして扱います。</li>
-        <li><b>＋登録</b>: 名前・武器種・スロットを入力します。傀異錬成でスロットを増やした場合は錬成後の値を入れます。</li>
+        <li><b>＋登録</b>: 名前・武器種・スロットを入力します。スロットは錬成後の値を入れます。</li>
         <li><b>検索対象</b>: 検索タブの「登録武器すべて」に含めるかどうかです。</li>
         <li>登録しなくても、検索タブの「スロット指定」で探せます。</li>
       </ul>`;
@@ -1812,6 +1850,35 @@ async function switchGame(id) {
   rerender();
   toast(`${G().short}に切り替えました`);
 }
+
+// ======================================================================
+// ソフトウェアキーボード対応
+//  iOS ではキーボード表示中も固定要素は画面全体基準のままなので、キーボードの裏に隠れる。
+//  visualViewport（実際に見えている領域）の位置・高さを CSS 変数に流し、シートをその中に収める。
+// ======================================================================
+function syncViewport() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const root = document.documentElement;
+  root.style.setProperty("--vv-h", vv.height + "px");
+  root.style.setProperty("--vv-top", vv.offsetTop + "px");
+  const kb = window.innerHeight - vv.height > 120; // キーボード（またはそれに相当する縮小）が出ている
+  if (root.classList.contains("kb-open") !== kb) root.classList.toggle("kb-open", kb);
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", syncViewport);
+  window.visualViewport.addEventListener("scroll", syncViewport);
+  syncViewport();
+}
+// 入力欄にフォーカスしたら、キーボードが出た後に入力欄を見える位置へ
+document.addEventListener("focusin", (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLElement) || !t.matches("input[type=text], input[type=search], input[type=number], textarea")) return;
+  setTimeout(() => {
+    syncViewport();
+    t.scrollIntoView({ block: "nearest" });
+  }, 350);
+});
 
 async function init() {
   applyTheme();
