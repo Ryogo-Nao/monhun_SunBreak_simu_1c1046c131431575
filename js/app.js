@@ -344,12 +344,9 @@ function renderSearch() {
       <span class="ctl2">
         <select data-act="cond-lv">${Array.from({ length: max }, (_, k) => k + 1).map((v) => `<option value="${v}" ${v === c.level ? "selected" : ""}>${esc(lvLabel(c.skill, v))}</option>`).join("")}</select>
         <label class="inline"><input type="checkbox" class="mini-switch" data-act="cond-req" ${c.required ? "checked" : ""}> 必須</label>
-        ${!c.required ? '<span class="muted small">希望（優先度順に満たす）</span>' : ""}
       </span></div>`;
-  }).join("") : '<p class="muted">「＋スキル追加」から発動させたいスキルを選んでください。</p>';
+  }).join("") : '<p class="muted">スキル未選択</p>';
 
-  const ownCount = Object.keys(st.ownedArmor).length;
-  const charmCount = st.charms.filter((c) => c.enabled !== false).length;
   const w = isW();
   const augCount = w ? st.artians.filter((a) => a.enabled !== false).length : st.qurious.filter((q) => q.enabled !== false).length;
 
@@ -360,26 +357,22 @@ function renderSearch() {
       <button class="btn sm" data-act="cond-clear" ${conds.length ? "" : "disabled"}>クリア</button>
       <button class="btn sm primary" data-act="cond-add">＋スキル追加</button></h2>
     <div class="card">${condHTML}</div>
-    <p class="muted small">上から順に優先度が高くなります。<b>必須</b>スキルは必ず満たす組み合わせのみを表示し、必須でない（希望）スキルは優先度の高いものから順に、できるだけ満たすように装飾品を割り当てます。${w ? "シリーズ／グループスキルは発動段階（必要部位数）で指定します。" : ""}</p>
   </div>
   <div>
     ${w ? wildsWeaponSection() : sbWeaponSection()}
     <h2>検索対象</h2>
     <div class="card">
-      <label class="switch"><span class="txt">${w ? "所持していない防具・武器・固定護石も対象にする" : "所持していない防具も対象にする"}<small>OFF: 所持登録した装備（防具${ownCount}件${w ? `・武器${Object.keys(st.ownedWeapons).length}件・固定護石${Object.keys(st.ownedCharms).length}件` : ""}）と${G().aug}${w ? "武器" : "防具"}・登録${w ? "光るお守り" : "護石"}のみ</small></span><input type="checkbox" data-opt="includeUnowned" ${o.includeUnowned ? "checked" : ""}></label>
-      <label class="switch"><span class="txt">${w ? "アーティア武器を対象にする" : "傀異錬成防具を対象にする"}<small>登録済み ${augCount}件</small></span><input type="checkbox" data-opt="includeQurious" ${o.includeQurious ? "checked" : ""}></label>
-      <label class="switch"><span class="txt">装飾品の所持数を考慮する<small>OFF: すべての装飾品を無制限に使える前提</small></span><input type="checkbox" data-opt="useDecoCount" ${o.useDecoCount ? "checked" : ""}></label>
-      <label class="switch"><span class="txt">下位互換の装備を除外する（推奨）<small>条件スキルとスロットが完全に劣る装備を省いて高速化</small></span><input type="checkbox" data-opt="pruneDominated" ${o.pruneDominated ? "checked" : ""}></label>
-      <label class="switch"><span class="txt">希望スキルもすべて満たすものだけ表示</span><input type="checkbox" data-opt="onlyFullSoft" ${o.onlyFullSoft ? "checked" : ""}></label>
+      <label class="switch"><span class="txt">未所持の装備も使う</span><input type="checkbox" data-opt="includeUnowned" ${o.includeUnowned ? "checked" : ""}></label>
+      <label class="switch"><span class="txt">${w ? "アーティアを使う" : "傀異錬成防具を使う"} <span class="muted small">${augCount}件</span></span><input type="checkbox" data-opt="includeQurious" ${o.includeQurious ? "checked" : ""}></label>
+      <label class="switch"><span class="txt">装飾品の所持数を反映</span><input type="checkbox" data-opt="useDecoCount" ${o.useDecoCount ? "checked" : ""}></label>
+      <label class="switch"><span class="txt">下位互換を除外（高速）</span><input type="checkbox" data-opt="pruneDominated" ${o.pruneDominated ? "checked" : ""}></label>
+      <label class="switch"><span class="txt">希望スキル全達成のみ</span><input type="checkbox" data-opt="onlyFullSoft" ${o.onlyFullSoft ? "checked" : ""}></label>
       <div class="form-row"><span class="lbl">最大件数</span><select data-act="limit">${[500, 1000, 5000, 20000, 100000].map((v) => `<option value="${v}" ${o.limit === v ? "selected" : ""}>${v.toLocaleString()}件</option>`).join("")}</select></div>
-      <p class="muted small" style="margin:4px 0 0">${w
-        ? `光るお守り: ${charmCount}件登録済み ／ 固定護石: ${o.includeUnowned ? "全種" : "所持" + Object.keys(st.ownedCharms).length + "件"}が候補`
-        : `護石: ${charmCount}件登録済み（${charmCount ? "すべて候補" : "護石なしで検索"}）／ 性別: ${["指定なし", "男性", "女性"][st.settings.sex]}（設定で変更）`}</p>
     </div>
   </div>
   </div>
   <div class="runbar">
-    <button class="btn primary block" data-act="run" ${conds.length ? "" : "disabled"}>この条件で検索</button>
+    <button class="btn primary block" data-act="run" ${conds.length ? "" : "disabled"}>検索</button>
     <button class="btn hide" data-act="cancel">中止</button>
   </div>
   <div class="progress" id="progress"></div>`;
@@ -388,11 +381,11 @@ function renderSearch() {
 function sbWeaponSection() {
   const o = S().simOpts;
   const weapons = S().weapons;
-  return `<h2>武器スロット</h2>
+  return `<h2>武器</h2>
     <div class="card">
       <div class="form-row"><select data-act="weapon-sel" class="grow">
-        <option value="manual" ${o.weapon === "manual" ? "selected" : ""}>スロットを直接指定</option>
-        ${weapons.length ? `<option value="all" ${o.weapon === "all" ? "selected" : ""}>登録武器すべてから探す（${weapons.filter((w) => w.enabled !== false).length}件）</option>` : ""}
+        <option value="manual" ${o.weapon === "manual" ? "selected" : ""}>スロット指定</option>
+        ${weapons.length ? `<option value="all" ${o.weapon === "all" ? "selected" : ""}>登録武器すべて（${weapons.filter((w) => w.enabled !== false).length}）</option>` : ""}
         ${weapons.map((w) => `<option value="${w.id}" ${o.weapon === w.id ? "selected" : ""}>${esc(w.name)}（${(w.slots || []).join("-") || "スロなし"}）</option>`).join("")}
       </select></div>
       <div class="form-row ${o.weapon === "manual" ? "" : "hide"}"><span class="lbl">スロット</span>${slotSelects(o.weaponSlots, "wslot")}</div>
@@ -413,13 +406,13 @@ function wildsWeaponSection() {
     <div class="card">
       <div class="form-row"><span class="lbl">武器種</span><select data-act="wtype" class="grow">${M.weaponTypes.map((t) => `<option ${t === type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
       <div class="form-row"><select data-act="weapon-sel" class="grow">
-        ${opt("type", `この武器種の中から探す（${o.includeUnowned ? "全" + all.length + "種" : "所持" + owned.length + "種"}${o.includeQurious ? "＋アーティア" + arts.filter((a) => a.enabled !== false).length + "件" : ""}）`)}
-        ${opt("manual", "武器スロットを直接指定（武器スキルなし）")}
-        ${arts.length ? `<optgroup label="アーティア武器">${arts.map((a) => opt("ar:" + a.id, artianItem(a).name + "（" + Object.keys(a.skills || {}).join("・") + "）")).join("")}</optgroup>` : ""}
+        ${opt("type", `${type}すべて（${(o.includeUnowned ? all.length : owned.length) + (o.includeQurious ? arts.filter((a) => a.enabled !== false).length : 0)}）`)}
+        ${opt("manual", "スロット指定")}
+        ${arts.length ? `<optgroup label="アーティア">${arts.map((a) => opt("ar:" + a.id, artianItem(a).name + "（" + Object.keys(a.skills || {}).join("・") + "）")).join("")}</optgroup>` : ""}
         ${owned.length ? `<optgroup label="所持武器">${owned.map((w) => opt(w.id, wlabel(w))).join("")}</optgroup>` : ""}
         <optgroup label="すべての武器">${all.map((w) => opt(w.id, wlabel(w))).join("")}</optgroup>
       </select></div>
-      <div class="form-row ${wsel === "manual" ? "" : "hide"}"><span class="lbl">武器スロット</span>${slotSelects(o.weaponSlots, "wslot", 3)}</div>
+      <div class="form-row ${wsel === "manual" ? "" : "hide"}"><span class="lbl">スロット</span>${slotSelects(o.weaponSlots, "wslot", 3)}</div>
     </div>`;
 }
 
@@ -510,7 +503,7 @@ function runSearch() {
   const t0 = Date.now();
   const finish = () => {
     runBtn.disabled = false;
-    runBtn.textContent = "この条件で検索";
+    runBtn.textContent = "検索";
     cancelBtn.classList.add("hide");
   };
   worker.onmessage = (e) => {
@@ -575,7 +568,7 @@ function resultKeyFns() {
   };
 }
 const RESULT_SORTS = () => [
-  ["priority", "優先度順（希望スキル達成度）"],
+  ["priority", "優先度順"],
   ["freeCount", "空きスロット数"],
   ["freeCap", "空きスロット合計Lv"],
   ...(isW() ? [["freeCapW", "空き武器スロット合計Lv"], ["freeCapA", "空き防具スロット合計Lv"]] : [["free4", "空きLv4スロット数"]]),
@@ -584,7 +577,7 @@ const RESULT_SORTS = () => [
   ["def", "防御力"],
   ...RES_LABEL.map((l, i) => ["res" + i, l + "耐性"]),
   ["softMet", "希望スキル達成数"],
-  ["owned", isW() ? "所持装備（所持防具・武器・アーティア・護石）の数" : "所持装備（所持防具・傀異・護石）の数"],
+  ["owned", "所持装備の数"],
   ["skillTotal", "スキルLv合計"],
   ...(last ? last.conds.map((c) => ["skill:" + c.skill, "スキル: " + c.skill]) : []),
 ];
@@ -603,7 +596,7 @@ function freeHTML(free, freeW) {
 
 function renderResults() {
   if (!last) {
-    view.innerHTML = '<h2>検索結果</h2><div class="card"><p class="muted">まだ検索していません。「検索」タブで条件を設定して検索してください。</p></div>';
+    view.innerHTML = '<h2>検索結果</h2><div class="card"><p class="muted">まだ検索していません</p></div>';
     return;
   }
   const { out } = last;
@@ -614,17 +607,14 @@ function renderResults() {
   if (filter) list = list.filter((r) => matchAny([...r.pieces.flatMap((p) => p.items.map((k) => last.keyMap[k]?.name)), ...Object.keys(r.skills)], filter));
   list = sorted(list, st.key, st.dir, resultKeyFns());
   const shown = list.slice(0, resultShown);
-  const g = out.stats.groups;
   view.innerHTML = `
     <h2><span class="grow">検索結果 ${out.results.length.toLocaleString()}件</span><span class="muted small">${G().short} / ${(out.stats.ms / 1000).toFixed(2)}秒</span></h2>
-    ${out.truncated ? `<div class="notice">最大件数（${out.results.length.toLocaleString()}件）に達したため探索を打ち切りました。すべての組み合わせを見るには検索タブで最大件数を増やすか、条件を絞ってください。</div>` : ""}
-    ${!out.results.length ? `<div class="notice">条件を満たす組み合わせが見つかりませんでした。必須スキルを減らす・Lvを下げる・「所持していない…も対象にする」をONにする${isW() ? "・武器の選び方を変える" : ""} などを試してください。</div>` : ""}
+    ${out.truncated ? `<div class="notice">最大件数で打ち切り</div>` : ""}
+    ${!out.results.length ? `<div class="notice">該当なし</div>` : ""}
     <div class="card">
       <div class="muted small">条件: ${last.conds.map((c) => `${esc(condText(c))}${c.required ? "(必須)" : ""}`).join(" / ")}</div>
-      <div class="muted small">候補数（同等装備をまとめた後）: ${Object.entries(g).map(([p, n]) => PART_LABEL[p] + n).join(" ")}</div>
-      ${isW() ? '<div class="muted small">スロット: ' + slotTag(3, "W") + " 武器用 " + slotTag(3, "A") + " 防具用</div>" : ""}
       ${sortBar("results", RESULT_SORTS(), "priority", "asc")}
-      <input type="search" placeholder="装備名・スキル名で絞り込み" data-act="res-filter" value="${esc(filter)}" style="width:100%">
+      <input type="search" placeholder="絞り込み" data-act="res-filter" value="${esc(filter)}" style="width:100%">
     </div>
     <div class="list cols" style="margin-top:10px">${shown.map((r) => resultCard(r, last.targets)).join("")}</div>
     ${list.length > resultShown ? `<button class="btn block" style="margin-top:10px" data-act="more">さらに表示（残り ${(list.length - resultShown).toLocaleString()}件）</button>` : ""}
@@ -649,7 +639,7 @@ function resultCard(r, targets) {
     const main = km[p.items[0]];
     const decos = r.decos.filter((d) => d.piece === pi);
     const decoTxt = decos.map((d) => d.deco ? `${slotTag(d.size, d.type)}${esc(d.deco)}` : `${slotTag(d.size, d.type, true)}空き`).join(" ");
-    const alts = p.items.length > 1 ? `<button class="alt" data-act="alts" data-k="${esc(p.items.join("\n"))}">他${p.items.length - 1}件の同等装備</button>` : "";
+    const alts = p.items.length > 1 ? `<button class="alt" data-act="alts" data-k="${esc(p.items.join("\n"))}">同等+${p.items.length - 1}</button>` : "";
     const wskills = p.part === "weapon" && main && Object.keys(main.skills || {}).length ? `<div class="decos">${Object.entries(main.skills).map(([k, v]) => esc(k) + v).join(" ")}</div>` : "";
     return `<tr><td class="p">${PART_LABEL[p.part]}</td><td class="n">${itemTag(main)}${esc(itemName(main))} ${alts}${wskills}
       ${decos.length ? `<div class="decos">${decoTxt}</div>` : ""}</td></tr>`;
@@ -738,12 +728,11 @@ function armorView() {
     <h2><span class="grow">防具（所持 ${Object.keys(st.ownedArmor).length}件）</span></h2>
     <div class="card">
       <div class="seg" data-armor-parts>${PARTS.map((p) => `<button data-ap="${p}" class="${p === part ? "on" : ""}">${PART_LABEL[p]}</button>`).join("")}</div>
-      <div class="row" style="margin-top:8px"><input type="search" class="grow" placeholder="防具名・スキル名で検索" data-act="armor-q" value="${esc(ui.armorQ || "")}"></div>
-      <label class="switch"><span class="txt">所持している防具のみ表示</span><input type="checkbox" data-ui="armorOwned" ${ui.armorOwned ? "checked" : ""}></label>
+      <div class="row" style="margin-top:8px"><input type="search" class="grow" placeholder="防具名・スキル名" data-act="armor-q" value="${esc(ui.armorQ || "")}"></div>
+      <label class="switch"><span class="txt">所持のみ表示</span><input type="checkbox" data-ui="armorOwned" ${ui.armorOwned ? "checked" : ""}></label>
       ${sortBar("armor", ARMOR_SORTS(), "no", "asc")}
-      <div class="row"><button class="btn sm" data-act="own-all">表示中をすべて所持にする</button><button class="btn sm" data-act="own-none">表示中の所持を解除</button></div>
+      <div class="row"><button class="btn sm" data-act="own-all">表示中を所持に</button><button class="btn sm" data-act="own-none">表示中の所持を解除</button></div>
     </div>
-    <p class="muted small">「所持」にチェックした防具は、検索タブの「所持していない…も対象にする」をOFFにしたときの候補になります。「除外」をONにすると常に検索対象外です。</p>
     <div class="list cols" id="armor-list">${armorRows(arr)}</div>`;
 }
 function armorRows(arr) {
@@ -757,7 +746,7 @@ function armorRows(arr) {
       <div class="acts">
         <label class="inline"><input type="checkbox" class="mini-switch" data-act="own" ${st.ownedArmor[a.id] ? "checked" : ""}>所持</label>
         <label class="inline"><input type="checkbox" class="mini-switch" data-act="exclude" ${st.excludedArmor[a.id] ? "checked" : ""}>除外</label>
-        ${isW() ? "" : '<button class="btn sm right" data-act="q-new-from">＋傀異錬成として登録</button>'}
+        ${isW() ? "" : '<button class="btn sm right" data-act="q-new-from">＋傀異錬成</button>'}
       </div></div>`).join("") || '<p class="muted">該当する防具がありません</p>';
 }
 
@@ -798,7 +787,7 @@ function quriousView() {
           <button class="btn sm" data-act="q-edit">編集</button>
           <button class="btn sm danger" data-act="q-del">削除</button>
         </div></div>`;
-    }).join("") || '<p class="muted">登録された傀異錬成防具はありません。「＋登録」または防具一覧の「＋傀異錬成として登録」から追加できます。</p>'}</div>`;
+    }).join("") || '<p class="muted">未登録</p>'}</div>`;
 }
 
 function quriousForm(q, base, asCopy = false) {
@@ -893,13 +882,12 @@ function artianView() {
     <div class="card">
       <div class="form-row"><span class="lbl">武器種</span><select data-act="artian-type" class="grow"><option value="">すべて</option>${M.weaponTypes.map((t) => `<option ${t === ft ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
       ${sortBar("artian", [["added", "登録順"], ["type", "武器種"], ["name", "名前"], ["slotSum", "スロット合計Lv"]], "added", "desc")}
-      <p class="muted small" style="margin:0">巨戟アーティア等で付与されるスキル（グループスキル・シリーズスキル 各1部位分）とスロットを登録します。サンブレイクの傀異錬成に相当する「個体ごとに性能が違う装備」です。</p>
     </div>
     <div class="list cols" style="margin-top:10px">${arr.map((x) => `<div class="item ${x.a.enabled === false ? "off" : ""}" data-arid="${x.a.id}">
         <div class="ttl"><span class="tag part">${esc(x.type)}</span><span class="grow">${esc(x.name)}${x.note ? ` <span class="muted small">${esc(x.note)}</span>` : ""}</span>${slotsHTML([], { wslots: x.wslots })}</div>
         <div class="chips">${skillChips(x.skills)}</div>
         <div class="acts"><label class="inline"><input type="checkbox" class="mini-switch" data-act="ar-enable" ${x.a.enabled !== false ? "checked" : ""}>検索対象</label>
-          <span class="right"></span><button class="btn sm" data-act="ar-copy">複製</button><button class="btn sm" data-act="ar-edit">編集</button><button class="btn sm danger" data-act="ar-del">削除</button></div></div>`).join("") || '<p class="muted">アーティア武器が登録されていません。</p>'}</div>`;
+          <span class="right"></span><button class="btn sm" data-act="ar-copy">複製</button><button class="btn sm" data-act="ar-edit">編集</button><button class="btn sm danger" data-act="ar-del">削除</button></div></div>`).join("") || '<p class="muted">未登録</p>'}</div>`;
 }
 function artianForm(a, asCopy = false) {
   const cur = a ? JSON.parse(JSON.stringify(a)) : { id: uid(), type: S().ui.artianType || S().simOpts.weaponType || M.weaponTypes[0], name: "", skills: {}, wslots: [3, 3, 3], note: "", enabled: true, createdAt: Date.now() };
@@ -915,7 +903,7 @@ function artianForm(a, asCopy = false) {
       <div class="form-row"><span class="lbl">シリーズスキル</span><select data-s class="grow"><option value="">なし</option>${series.map((s) => `<option value="${esc(s.name)}" ${s.name === curS ? "selected" : ""}>${esc(s.name)}（${esc(s.names.join("/"))}）</option>`).join("")}</select></div>
       <div class="form-row"><span class="lbl">武器スロット</span>${slotSelects(cur.wslots, "slot", 3)}</div>
       <div class="form-row"><span class="lbl">メモ</span><input type="text" class="grow" data-note value="${esc(cur.note || "")}" placeholder="例: 火属性 会心強化×3"></div>
-      <p class="muted small">付与スキルはそれぞれ1部位分としてカウントされます（例: 防具3部位＋アーティアでシリーズスキル4部位）。</p>`,
+`,
     foot: '<button class="btn" data-close>キャンセル</button><button class="btn primary" data-save>保存</button>',
     onMount(m, close) {
       m.querySelector("[data-save]").addEventListener("click", () => {
@@ -961,19 +949,18 @@ function charmView() {
       <button class="btn sm" data-act="c-import">インポート</button>
       <button class="btn sm primary" data-act="c-new">＋登録</button></h2>
     <div class="card">
-      <input type="search" placeholder="スキル名の一部・読みで絞り込み" data-act="charm-q" value="${esc(st.ui.charmQ || "")}" style="width:100%">
+      <input type="search" placeholder="スキル名" data-act="charm-q" value="${esc(st.ui.charmQ || "")}" style="width:100%">
       ${sortBar("charm", CHARM_SORTS(), "added", "desc")}
-      ${isW() ? '<p class="muted small" style="margin:0">鑑定で入手したランダムスキルの護石です。スロットは武器用／防具用を選んで登録します。</p>' : ""}
     </div>
     <div class="list cols" style="margin-top:10px" id="charm-list">${arr.map((x) => `<div class="item ${x.c.enabled === false ? "off" : ""}" data-cid="${x.c.id}">
         <div class="ttl"><span class="grow chips">${skillChips(x.skills)}</span>${slotsHTML(x.slots, { pad: true, wslots: x.wslots })}</div>
         ${x.c.note ? `<div class="meta">${esc(x.c.note)}</div>` : ""}
         <div class="acts"><label class="inline"><input type="checkbox" class="mini-switch" data-act="c-enable" ${x.c.enabled !== false ? "checked" : ""}>検索対象</label>
-        <span class="right"></span><button class="btn sm" data-act="c-edit">編集</button><button class="btn sm danger" data-act="c-del">削除</button></div></div>`).join("") || `<p class="muted">${isW() ? "光るお守り" : "護石"}が登録されていません。</p>`}</div>`;
+        <span class="right"></span><button class="btn sm" data-act="c-edit">編集</button><button class="btn sm danger" data-act="c-del">削除</button></div></div>`).join("") || `<p class="muted">未登録</p>`}</div>`;
 }
 function charmSeg() {
   const seg = S().ui.charmSeg || "shining";
-  return `<div class="seg" style="margin-top:10px" data-charm-seg><button data-cs="shining" class="${seg === "shining" ? "on" : ""}">光るお守り（鑑定）</button><button data-cs="fixed" class="${seg === "fixed" ? "on" : ""}">固定護石</button></div>`;
+  return `<div class="seg" style="margin-top:10px" data-charm-seg><button data-cs="shining" class="${seg === "shining" ? "on" : ""}">光るお守り</button><button data-cs="fixed" class="${seg === "fixed" ? "on" : ""}">固定護石</button></div>`;
 }
 const fcharmKeyFns = {
   no: (c) => c.no, name: (c) => c.name, rarity: (c) => c.rarity, owned: (c) => (S().ownedCharms[c.id] ? 1 : 0),
@@ -994,10 +981,10 @@ function fixedCharmView() {
   return `${charmSeg()}
     <h2>固定護石（所持 ${Object.keys(st.ownedCharms).length}件）</h2>
     <div class="card">
-      <input type="search" placeholder="護石名・スキル名で検索" data-act="fcharm-q" value="${esc(st.ui.fcharmQ || "")}" style="width:100%">
-      <label class="switch"><span class="txt">所持している護石のみ表示</span><input type="checkbox" data-ui="fcharmOwned" ${st.ui.fcharmOwned ? "checked" : ""}></label>
+      <input type="search" placeholder="護石名・スキル名" data-act="fcharm-q" value="${esc(st.ui.fcharmQ || "")}" style="width:100%">
+      <label class="switch"><span class="txt">所持のみ表示</span><input type="checkbox" data-ui="fcharmOwned" ${st.ui.fcharmOwned ? "checked" : ""}></label>
       ${sortBar("fcharm", [["no", "標準（データ順）"], ["name", "名前"], ["rarity", "レア度"], ["skillTotal", "スキルLv合計"], ["owned", "所持"]], "no", "asc")}
-      <div class="row"><button class="btn sm" data-act="fc-own-all">表示中をすべて所持にする</button><button class="btn sm" data-act="fc-own-none">表示中の所持を解除</button></div>
+      <div class="row"><button class="btn sm" data-act="fc-own-all">表示中を所持に</button><button class="btn sm" data-act="fc-own-none">表示中の所持を解除</button></div>
     </div>
     <div class="list cols" style="margin-top:10px" id="fcharm-list">${fixedCharmRows(arr)}</div>`;
 }
@@ -1081,12 +1068,12 @@ function weaponView() {
   return `
     <h2><span class="grow">武器（${st.weapons.length}件）</span><button class="btn sm primary" data-act="w-new">＋登録</button></h2>
     <div class="card">${sortBar("weapon", WEAPON_SORTS, "added", "desc")}
-      <p class="muted small" style="margin:0">武器はスキルシミュレーションでは装飾品スロットとして扱います（傀異錬成でスロットを拡張した場合は錬成後のスロットを登録してください）。</p></div>
+</div>
     <div class="list cols" style="margin-top:10px">${arr.map((w) => `<div class="item ${w.enabled === false ? "off" : ""}" data-wid="${w.id}">
       <div class="ttl"><span class="grow">${esc(w.name)}</span>${slotsHTML(w.slots, { pad: true })}</div>
       <div class="meta"><span>${esc(w.type || "")}</span>${w.note ? `<span>${esc(w.note)}</span>` : ""}</div>
-      <div class="acts"><label class="inline"><input type="checkbox" class="mini-switch" data-act="w-enable" ${w.enabled !== false ? "checked" : ""}>「すべてから探す」の対象</label>
-      <span class="right"></span><button class="btn sm" data-act="w-edit">編集</button><button class="btn sm danger" data-act="w-del">削除</button></div></div>`).join("") || '<p class="muted">武器が登録されていません。登録しなくても検索タブでスロットを直接指定できます。</p>'}</div>`;
+      <div class="acts"><label class="inline"><input type="checkbox" class="mini-switch" data-act="w-enable" ${w.enabled !== false ? "checked" : ""}>検索対象</label>
+      <span class="right"></span><button class="btn sm" data-act="w-edit">編集</button><button class="btn sm danger" data-act="w-del">削除</button></div></div>`).join("") || '<p class="muted">未登録</p>'}</div>`;
 }
 function weaponForm(w) {
   const cur = w ? JSON.parse(JSON.stringify(w)) : { id: uid(), name: "", type: SB_WEAPON_TYPES[0], slots: [], note: "", enabled: true, createdAt: Date.now() };
@@ -1139,11 +1126,10 @@ function wildsWeaponView() {
     <h2>武器（所持 ${Object.keys(st.ownedWeapons).length}件）</h2>
     <div class="card">
       <div class="form-row"><span class="lbl">武器種</span><select data-act="ww-type" class="grow">${M.weaponTypes.map((t) => `<option ${t === type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
-      <input type="search" placeholder="武器名・スキル名で検索" data-act="ww-q" value="${esc(st.ui.wwQ || "")}" style="width:100%">
-      <label class="switch"><span class="txt">所持している武器のみ表示</span><input type="checkbox" data-ui="wwOwned" ${st.ui.wwOwned ? "checked" : ""}></label>
+      <input type="search" placeholder="武器名・スキル名" data-act="ww-q" value="${esc(st.ui.wwQ || "")}" style="width:100%">
+      <label class="switch"><span class="txt">所持のみ表示</span><input type="checkbox" data-ui="wwOwned" ${st.ui.wwOwned ? "checked" : ""}></label>
       ${sortBar("wweapon", [["no", "標準（データ順）"], ["name", "名前"], ["rarity", "レア度"], ["attack", "攻撃力"], ["slotSum", "スロット合計Lv"], ["slotCount", "スロット数"], ["slot3", "Lv3スロット数"], ["skillTotal", "スキルLv合計"], ["owned", "所持"]], "no", "asc")}
-      <div class="row"><button class="btn sm" data-act="ww-own-all">表示中をすべて所持にする</button><button class="btn sm" data-act="ww-own-none">表示中の所持を解除</button></div>
-      <p class="muted small" style="margin:6px 0 0">アーティア武器は「アーティア」タブで登録します。</p>
+      <div class="row"><button class="btn sm" data-act="ww-own-all">表示中を所持に</button><button class="btn sm" data-act="ww-own-none">表示中の所持を解除</button></div>
     </div>
     <div class="list cols" style="margin-top:10px" id="ww-list">${wildsWeaponRows(wildsWeaponList())}</div>`;
 }
@@ -1175,12 +1161,11 @@ function decoView() {
   return `
     <h2><span class="grow">装飾品（${M.decos.length}種）</span></h2>
     <div class="card">
-      <input type="search" placeholder="装飾品名・スキル名で絞り込み" data-act="deco-q" value="${esc(st.ui.decoQ || "")}" style="width:100%">
+      <input type="search" placeholder="装飾品名・スキル名" data-act="deco-q" value="${esc(st.ui.decoQ || "")}" style="width:100%">
       <div class="seg" style="margin-top:8px" data-deco-size><button data-ds="0" class="${!st.ui.decoSize ? "on" : ""}">すべて</button>${sizes.map((s) => `<button data-ds="${s}" class="${st.ui.decoSize === s ? "on" : ""}">Lv${s}</button>`).join("")}</div>
       ${isW() ? `<div class="seg" style="margin-top:6px" data-deco-type>${[["", "すべて"], ["W", "武器用"], ["A", "防具用"]].map(([k, l]) => `<button data-dt="${k}" class="${(st.ui.decoType || "") === k ? "on" : ""}">${l}</button>`).join("")}</div>` : ""}
       ${sortBar("deco", [["skill", "スキル名"], ["name", "名前"], ["size", "スロットLv"], ["lv", "スキルLv"], ["count", "所持数"], ...(isW() ? [["type", "種別（武器/防具）"]] : [])], "skill", "asc")}
-      <div class="row"><button class="btn sm" data-act="deco-unlimited">すべて無制限に戻す</button><button class="btn sm" data-act="deco-zero">表示中を0個にする</button></div>
-      <p class="muted small" style="margin:6px 0 0">所持数を空欄にすると無制限として扱います。検索タブで「装飾品の所持数を考慮する」をONにしたときだけ反映されます。</p>
+      <div class="row"><button class="btn sm" data-act="deco-unlimited">全て無制限</button><button class="btn sm" data-act="deco-zero">表示中を0個に</button></div>
     </div>
     <div class="list cols" style="margin-top:10px" id="deco-list">${arr.map((d) => {
       const c = st.decoCount[d.name];
@@ -1208,7 +1193,7 @@ function importDialog(kind) {
   const ph = isQ ? "ゴアヘルムＳ,0,0,0,0,0,0,1,0,0,攻撃,1" : w ? "攻撃,1,弱点特効,1,,,1,0,0,2,0,0" : "攻撃,2,見切り,1,2,1,0";
   openModal({
     title: isQ ? "傀異錬成防具のインポート" : w ? "光るお守りのインポート" : "護石のインポート",
-    body: `<p class="muted small">1行1件のCSV形式で貼り付けてください（泣きシミュのエクスポート形式に対応）。<br>${help}</p>
+    body: `<p class="muted small">1行1件: ${help}</p>
       <textarea data-text placeholder="${esc(ph)}"></textarea>
       <div data-msg class="muted small"></div>`,
     foot: '<button class="btn" data-close>キャンセル</button><button class="btn primary" data-go>取り込む</button>',
@@ -1287,7 +1272,7 @@ function renderMysets() {
         <table class="pieces">${x.pieces.map((p) => `<tr><td class="p">${PART_LABEL[p.part]}</td><td class="n">${p.kind === "qurious" ? '<span class="tag q">傀異</span> ' : p.kind === "artian" ? '<span class="tag q">アーティア</span> ' : ""}${esc(p.name)}${p.note ? `（${esc(p.note)}）` : ""}
           ${p.decos.length ? `<div class="decos">${p.decos.map((d) => d.deco ? `${slotTag(d.size, d.type)}${esc(d.deco)}` : `${slotTag(d.size, d.type, true)}空き`).join(" ")}</div>` : ""}</td></tr>`).join("")}</table>
         <div class="chips" style="margin-top:6px">${skillChips(x.skills, { targets, result: true })}</div></div>`;
-    }).join("") || '<p class="muted">検索結果の「⭐保存」でここに保存できます。</p>'}</div>`;
+    }).join("") || '<p class="muted">未保存</p>'}</div>`;
 }
 
 // ======================================================================
@@ -1300,22 +1285,19 @@ function renderSettings() {
     <h2>ゲームタイトル</h2>
     <div class="card">
       <div class="seg" data-game>${Object.values(GAMES).map((g) => `<button data-gm="${g.id}" class="${g.id === getGame() ? "on" : ""}">${g.short}</button>`).join("")}</div>
-      <p class="muted small" style="margin:8px 0 0">選んだタイトルの装備データで検索します。登録した手持ち装備・条件・マイセットはタイトルごとに別々に保存されます。</p>
     </div>
     <h2>基本設定</h2>
     <div class="card">
-      ${w ? "" : `<div class="form-row"><span class="lbl">性別</span><div class="seg grow" data-sex>${["指定なし", "男性", "女性"].map((l, i) => `<button data-sx="${i}" class="${st.settings.sex === i ? "on" : ""}">${l}</button>`).join("")}</div></div>
-      <p class="muted small" style="margin:0">男性専用・女性専用の防具を検索・一覧から除外します。</p>`}
+      ${w ? "" : `<div class="form-row"><span class="lbl">性別</span><div class="seg grow" data-sex>${["指定なし", "男性", "女性"].map((l, i) => `<button data-sx="${i}" class="${st.settings.sex === i ? "on" : ""}">${l}</button>`).join("")}</div></div>`}
       <div class="form-row"><span class="lbl">テーマ</span><div class="seg grow" data-theme>${[["", "自動"], ["light", "ライト"], ["dark", "ダーク"]].map(([k, l]) => `<button data-th="${k}" class="${(st.settings.theme || "") === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
     </div>
-    <h2>データのバックアップ（${G().short}）</h2>
+    <h2>バックアップ（${G().short}）</h2>
     <div class="card">
-      <p class="muted small" style="margin-top:0">登録データはこの端末のブラウザ内に保存されます。機種変更・ブラウザのデータ削除に備えて定期的にバックアップしてください。PCとスマホでデータを移すときもこの機能を使います。バックアップ・復元は現在選んでいるタイトルのデータが対象です。</p>
-      <div class="row"><button class="btn" data-act="export">バックアップを保存（JSON）</button><button class="btn" data-act="export-copy">テキストでコピー</button></div>
-      <div class="row" style="margin-top:8px"><label class="btn">ファイルから復元<input type="file" accept="application/json,.json,.txt" data-act="import-file" hidden></label><button class="btn" data-act="import-text">テキストから復元</button></div>
-      <div class="row" style="margin-top:8px"><button class="btn danger" data-act="reset">${G().short}のデータをすべて削除</button></div>
+      <div class="row"><button class="btn" data-act="export">ファイルに保存</button><button class="btn" data-act="export-copy">コピー</button></div>
+      <div class="row" style="margin-top:8px"><label class="btn">ファイルから復元<input type="file" accept="application/json,.json,.txt" data-act="import-file" hidden></label><button class="btn" data-act="import-text">貼り付けて復元</button></div>
+      <div class="row" style="margin-top:8px"><button class="btn danger" data-act="reset">全データ削除</button></div>
     </div>
-    <h2>このアプリについて</h2>
+    <h2>データ</h2>
     <div class="card small">
       <dl class="kv">
         <dt>データ</dt><dd>${esc(M.version)}<br>防具 ${M.armors.length} ／ スキル ${M.skills.length} ／ 装飾品 ${M.decos.length}${w ? ` ／ 武器 ${M.weapons.length} ／ 固定護石 ${M.charms.length}` : ""}</dd>
@@ -1323,17 +1305,203 @@ function renderSettings() {
           ? `所持防具 ${Object.keys(st.ownedArmor).length} ／ 所持武器 ${Object.keys(st.ownedWeapons).length} ／ アーティア ${st.artians.length} ／ 光るお守り ${st.charms.length}`
           : `所持防具 ${Object.keys(st.ownedArmor).length} ／ 傀異錬成 ${st.qurious.length} ／ 護石 ${st.charms.length} ／ 武器 ${st.weapons.length}`}</dd>
       </dl>
-      <p class="muted">データは ${w
-        ? '<a href="https://github.com/EXXXI/WildsSim" target="_blank" rel="noopener">WildsSim</a>（MIT License, © 2025 EXXXI）'
-        : '<a href="https://github.com/EXXXI/RiseSim" target="_blank" rel="noopener">RiseSim</a>（MIT License, © 2022 EXXXI）'}のCSVを変換して利用しています。ホーム画面に追加するとアプリのように使えます（iPhone: Safariの共有ボタン →「ホーム画面に追加」）。</p>
+      <p class="muted" style="margin:6px 0 0">出典: ${w
+        ? '<a href="https://github.com/EXXXI/WildsSim" target="_blank" rel="noopener">WildsSim</a>（MIT, © 2025 EXXXI）'
+        : '<a href="https://github.com/EXXXI/RiseSim" target="_blank" rel="noopener">RiseSim</a>（MIT, © 2022 EXXXI）'}</p>
     </div>`;
 }
+
+// ======================================================================
+// 画面: 説明（ヘッダーの「？」から開く）
+// ======================================================================
+let helpKey = "search";
+let helpBack = null;   // { tab, equipTab, scroll }
+
+function helpTopics() {
+  const w = isW();
+  return [
+    ["search", "検索"], ["results", "結果"], ["armor", "防具"],
+    w ? ["artian", "アーティア"] : ["qurious", "傀異錬成"],
+    ["charm", "護石"], ["weapon", "武器"], ["deco", "装飾品"], ["mysets", "マイセット"], ["settings", "設定"],
+  ];
+}
+
+function helpBody(key) {
+  const w = isW();
+  const ex = (html) => `<span class="ex">${html}</span>`;
+  switch (key) {
+    case "search": return `
+      <h3>スキル条件</h3>
+      <ul>
+        <li><b>＋スキル追加</b>: 発動させたいスキルを選びます。名前の一部・読み（例:「弱特」「こうげき」）でも探せます。</li>
+        <li><b>並び順＝優先度</b>: 上ほど優先。<b>↑↓</b>で入れ替え、<b>✕</b>で削除。</li>
+        <li><b>Lv</b>: 必要なスキルLvを選びます。${w ? "シリーズ／グループスキルは発動段階（例: 力自慢Ⅱ＝4部位）を選びます。" : ""}</li>
+        <li><b>必須 ON</b>: 必ず満たす組み合わせだけを表示します。数の制限はありません。</li>
+        <li><b>必須 OFF（希望）</b>: 満たせなくても表示し、優先度の高いスキルから順にできるだけ満たすよう装飾品を割り当てます。</li>
+      </ul>
+      <h3>武器</h3>
+      ${w ? `<ul>
+        <li><b>武器種</b>: 検索する武器種を選びます。</li>
+        <li><b>（武器種）すべて</b>: その武器種の武器とアーティアから探します。「未所持の装備も使う」がOFFなら所持登録した武器だけが対象です。</li>
+        <li><b>アーティア／個別の武器</b>: その武器に固定して探します。</li>
+        <li><b>スロット指定</b>: 武器スキルなしで、武器スロットだけを指定します。</li>
+      </ul>` : `<ul>
+        <li><b>スロット指定</b>: 武器のスロットだけを指定します（武器の登録は不要）。</li>
+        <li><b>登録武器すべて</b>: 装備タブで登録した武器すべてから探します。</li>
+        <li><b>個別の武器</b>: その武器に固定して探します。</li>
+      </ul>`}
+      <h3>検索対象</h3>
+      <dl>
+        <dt>未所持の装備も使う</dt><dd>OFFにすると、所持登録した${w ? "防具・武器・固定護石" : "防具"}と、登録した${w ? "アーティア・光るお守り" : "傀異錬成防具・護石"}だけで探します。</dd>
+        <dt>${w ? "アーティアを使う" : "傀異錬成防具を使う"}</dt><dd>登録した${w ? "アーティア武器" : "傀異錬成防具"}を候補に入れます。</dd>
+        <dt>装飾品の所持数を反映</dt><dd>装飾品タブの所持数を上限にします。OFFならすべて無制限です。</dd>
+        <dt>下位互換を除外</dt><dd>条件スキルとスロットが完全に劣る装備を省きます。速くなり、結果も見やすくなります。</dd>
+        <dt>希望スキル全達成のみ</dt><dd>希望スキルも全部満たす組み合わせだけを表示します。</dd>
+        <dt>最大件数</dt><dd>見つかった件数がここに達すると探索を打ち切ります。</dd>
+      </dl>
+      <p>護石は、登録した${w ? "光るお守りと固定護石（未所持OFF時は所持登録したもの）" : "護石すべて"}が候補です。${w ? "" : "性別は設定タブで指定します。"}</p>
+      <h3>検索</h3>
+      <p>結果タブに切り替わります。時間がかかるときは<b>中止</b>できます。</p>`;
+    case "results": return `
+      <h3>見方</h3>
+      <ul>
+        <li>部位ごとに装備名と、付ける装飾品が表示されます。${ex(slotTag(2, "A", true))} は空きスロットです。</li>
+        ${w ? `<li>${ex(slotTag(3, "W"))} 丸は武器用スロット、${ex(slotTag(3, "A"))} 四角は防具用スロットです。武器用の装飾品は武器用スロットにだけ付きます。</li>` : ""}
+        <li>スキルの色: <span class="chip ok">緑</span> 条件を達成、<span class="chip ng">赤</span> 未達（希望スキル）。</li>
+        ${w ? "<li>シリーズ／グループスキルは「4pt→力自慢Ⅱ」のようにポイントと発動スキルを表示します。</li>" : ""}
+        <li><b>同等+N</b>: 条件スキルとスロットが同じ装備が他にN件あります。押すと一覧を表示します。</li>
+        <li><b>⭐保存</b>: マイセットに保存します。</li>
+      </ul>
+      <h3>並び替え・絞り込み</h3>
+      <ul>
+        <li><b>優先度順</b>: 希望スキルを優先度の高い順に多く満たすもの → 空きスロットが多いもの → 防御力の順です。</li>
+        <li>空きスロット数・合計Lv${w ? "（武器用/防具用別）" : ""}、防御力、耐性、条件スキルなどで並べ替えられます。「スキルLvで並べる…」で任意のスキルも選べます。▲▼で昇順/降順。</li>
+        <li><b>絞り込み</b>: 装備名・スキル名を含む結果だけを表示します。</li>
+      </ul>
+      <h3>打ち切り・該当なし</h3>
+      <ul>
+        <li><b>最大件数で打ち切り</b>: 検索タブで最大件数を増やすか、条件を絞ってください。打ち切った場合、有望な組み合わせから順に探していますが全体の上位とは限りません。</li>
+        <li><b>該当なし</b>: 必須スキルを減らす、Lvを下げる、「未所持の装備も使う」をONにする${w ? "、武器の選び方を変える" : ""}などを試してください。</li>
+      </ul>`;
+    case "armor": return `
+      <ul>
+        <li>部位を切り替え、名前やスキル名で探せます。</li>
+        <li><b>所持</b>: 持っている防具に付けます。「未所持の装備も使う」をOFFにしたときの候補になります。</li>
+        <li><b>除外</b>: 常に検索に使いません。</li>
+        <li><b>表示中を所持に／所持を解除</b>: いま一覧に出ている防具をまとめて切り替えます。</li>
+        ${w ? "" : "<li><b>＋傀異錬成</b>: その防具をベースに傀異錬成防具を登録します。</li>"}
+        <li>スロット: ${ex(slotTag(3, "A") + '<span class="slot empty">-</span>')} 数字はスロットLv、「-」は空きなしです。</li>
+      </ul>`;
+    case "qurious": return `
+      <ul>
+        <li><b>＋登録</b>: ベース防具を選び、錬成後のスロット、スキルの増減（−も可）、防御・耐性の増減を入力します。</li>
+        <li><b>インポート</b>: 泣きシミュ形式のCSVを貼り付けて一括登録します。<br><code>ベース防具名,防御,火,水,雷,氷,龍,スロ1増,スロ2増,スロ3増,スキル,増減,…</code></li>
+        <li><b>検索対象</b>: OFFにすると検索に使いません。</li>
+        <li><b>複製</b>: 似た錬成結果をコピーして登録できます。</li>
+      </ul>`;
+    case "artian": return `
+      <ul>
+        <li>付与スキルやスロットが個体ごとに違うアーティア武器を登録します（サンブレイクの傀異錬成に相当）。</li>
+        <li><b>＋登録</b>: 武器種、グループスキル、シリーズスキル、武器スロットを選びます。</li>
+        <li>付与スキルは<b>それぞれ1部位分</b>として数えます（例: 防具3部位＋アーティアでシリーズスキル4部位）。</li>
+        <li><b>検索対象</b>: OFFにすると検索に使いません。</li>
+      </ul>`;
+    case "charm": return w ? `
+      <h3>光るお守り</h3>
+      <ul>
+        <li>鑑定で入手したランダムスキルの護石を登録します。</li>
+        <li><b>＋登録</b>: スキルを3つまで、スロットは「武器用／防具用」を選んで入力します。「続けて登録」で連続入力できます。</li>
+        <li><b>インポート</b>: 泣きシミュ形式のCSVを貼り付けて一括登録します。<br><code>スキル1,Lv,スキル2,Lv,スキル3,Lv,武器スロ1,武器スロ2,武器スロ3,防具スロ1,防具スロ2,防具スロ3</code></li>
+      </ul>
+      <h3>固定護石</h3>
+      <ul><li><b>所持</b>: 持っている護石に付けます。「未所持の装備も使う」がOFFのときは所持した固定護石だけが候補です。</li></ul>` : `
+      <ul>
+        <li><b>＋登録</b>: スキル2つとスロットを入力します。「続けて登録」で連続入力できます。</li>
+        <li><b>インポート</b>: 泣きシミュ形式のCSVを貼り付けて一括登録します。<br><code>スキル1,Lv,スキル2,Lv,スロ1,スロ2,スロ3</code></li>
+        <li><b>検索対象</b>: OFFにすると検索に使いません。護石が1つもなければ「護石なし」で検索します。</li>
+      </ul>`;
+    case "weapon": return w ? `
+      <ul>
+        <li>武器種を選び、持っている武器の<b>所持</b>をONにします。「未所持の装備も使う」がOFFのとき、所持した武器だけが候補です。</li>
+        <li>武器スキルと武器用スロット ${ex(slotTag(3, "W"))} は武器ごとのデータで計算します。</li>
+        <li>アーティア武器は「アーティア」タブで登録します。</li>
+      </ul>` : `
+      <ul>
+        <li>武器はスキル計算ではスロットとして扱います。</li>
+        <li><b>＋登録</b>: 名前・武器種・スロットを入力します。傀異錬成でスロットを増やした場合は錬成後の値を入れます。</li>
+        <li><b>検索対象</b>: 検索タブの「登録武器すべて」に含めるかどうかです。</li>
+        <li>登録しなくても、検索タブの「スロット指定」で探せます。</li>
+      </ul>`;
+    case "deco": return `
+      <ul>
+        <li>所持数を入力します。<b>空欄＝無制限</b>です。</li>
+        <li>所持数は、検索タブの「装飾品の所持数を反映」がONのときだけ使います。</li>
+        <li><b>全て無制限</b>: すべての所持数を空欄に戻します。<b>表示中を0個に</b>: 一覧に出ている装飾品を0個にします。</li>
+        ${w ? `<li>${ex(slotTag(3, "W"))} 武器用、${ex(slotTag(3, "A"))} 防具用の装飾品です。</li>` : ""}
+      </ul>`;
+    case "mysets": return `
+      <ul>
+        <li>結果タブの<b>⭐保存</b>で追加されます。</li>
+        <li>メモ欄に自由に名前を付けられます。並び替えもできます。</li>
+      </ul>`;
+    case "settings": return `
+      <dl>
+        <dt>ゲームタイトル</dt><dd>サンブレイク／ワイルズを切り替えます。手持ち装備・条件・マイセットはタイトルごとに別々に保存されます。</dd>
+        ${w ? "" : "<dt>性別</dt><dd>男性専用・女性専用の防具を一覧と検索から外します。</dd>"}
+        <dt>テーマ</dt><dd>画面の明るさを切り替えます。</dd>
+        <dt>ファイルに保存／コピー</dt><dd>いま選んでいるタイトルの登録データをバックアップします。</dd>
+        <dt>ファイルから復元／貼り付けて復元</dt><dd>バックアップを読み込みます。現在のデータは上書きされます。</dd>
+        <dt>全データ削除</dt><dd>いま選んでいるタイトルの登録データを消します。</dd>
+      </dl>
+      <h3>データの保存について</h3>
+      <p>登録データはこの端末のブラウザ内に保存されます（サーバーには送られません）。機種変更やブラウザのデータ削除に備え、定期的にバックアップしてください。PCとスマホでデータを移すときもバックアップを使います。</p>
+      <h3>アプリとして使う</h3>
+      <p>iPhone: Safariの共有ボタン →「ホーム画面に追加」。オフラインでも動きます。</p>
+      <h3>データ出典</h3>
+      <p>サンブレイク: <a href="https://github.com/EXXXI/RiseSim" target="_blank" rel="noopener">RiseSim</a>（MIT, © 2022 EXXXI）<br>ワイルズ: <a href="https://github.com/EXXXI/WildsSim" target="_blank" rel="noopener">WildsSim</a>（MIT, © 2025 EXXXI）</p>`;
+  }
+  return "";
+}
+
+function renderHelp() {
+  const topics = helpTopics();
+  if (!topics.some((t) => t[0] === helpKey)) helpKey = "search";
+  view.innerHTML = `
+    <h2><button class="btn sm" data-act="help-back">← 戻る</button><span class="grow">説明（${G().short}）</span></h2>
+    <div class="seg" data-help-topics>${topics.map(([k, l]) => `<button data-hk="${k}" class="${k === helpKey ? "on" : ""}">${l}</button>`).join("")}</div>
+    <div class="card help" style="margin-top:10px">${helpBody(helpKey)}</div>`;
+  const on = view.querySelector("[data-hk].on");
+  if (on) on.scrollIntoView({ block: "nearest", inline: "center" });
+}
+
+function openHelp() {
+  if (tab === "help") { closeHelp(); return; }
+  helpBack = { tab, scroll: window.scrollY };
+  helpKey = tab === "equip" ? equipTab : tab;
+  tab = "help";
+  document.querySelectorAll("#tabbar button").forEach((b) => b.classList.remove("on"));
+  document.getElementById("help-btn").classList.add("on");
+  renderHelp();
+  window.scrollTo(0, 0);
+}
+function closeHelp() {
+  const back = helpBack || { tab: "search", scroll: 0 };
+  helpBack = null;
+  document.getElementById("help-btn").classList.remove("on");
+  tab = back.tab;
+  document.querySelectorAll("#tabbar button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  rerender();
+  window.scrollTo(0, back.scroll);
+}
+document.getElementById("help-btn").addEventListener("click", openHelp);
 
 // ======================================================================
 // ルーティング・イベント
 // ======================================================================
 function setTab(t) {
   tab = t;
+  helpBack = null;
+  document.getElementById("help-btn").classList.remove("on");
   document.querySelectorAll("#tabbar button").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
   rerender();
   window.scrollTo(0, 0);
@@ -1344,6 +1512,7 @@ function rerender() {
   else if (tab === "results") renderResults();
   else if (tab === "equip") renderEquip();
   else if (tab === "mysets") renderMysets();
+  else if (tab === "help") renderHelp();
   else renderSettings();
 }
 
@@ -1441,9 +1610,10 @@ view.addEventListener("change", (e) => {
 });
 
 view.addEventListener("click", (e) => {
-  const el = e.target.closest("[data-act],[data-et],[data-ap],[data-qp],[data-ds],[data-dt],[data-sx],[data-th],[data-gm],[data-cs]");
+  const el = e.target.closest("[data-act],[data-et],[data-ap],[data-qp],[data-ds],[data-dt],[data-sx],[data-th],[data-gm],[data-cs],[data-hk]");
   if (!el || el.tagName === "SELECT" || (el.tagName === "INPUT" && el.type !== "button")) return;
   const st = S();
+  if (el.dataset.hk) { helpKey = el.dataset.hk; renderHelp(); return; }
   if (el.dataset.et) { equipTab = el.dataset.et; renderEquip(); return; }
   if (el.dataset.gm) { switchGame(el.dataset.gm); return; }
   if (el.dataset.cs) { update((s) => { s.ui.charmSeg = el.dataset.cs; }); renderEquipBody(); return; }
@@ -1481,6 +1651,9 @@ view.addEventListener("click", (e) => {
     case "run":
       runSearch();
       break;
+    case "help-back":
+      closeHelp();
+      break;
     case "sort-dir": {
       const id = el.closest("[data-sort]").dataset.sort;
       const ss = sortState(id);
@@ -1496,7 +1669,7 @@ view.addEventListener("click", (e) => {
     case "alts": {
       const keys = el.dataset.k.split("\n");
       openModal({
-        title: "同等の装備（条件スキル・スロットが同じ）",
+        title: "同等の装備",
         body: `<div class="list">${keys.map((k) => {
           const it = last.keyMap[k];
           if (!it) return "";
@@ -1579,8 +1752,8 @@ view.addEventListener("click", (e) => {
       break;
     case "import-text":
       openModal({
-        title: "テキストから復元",
-        body: '<p class="muted small">「テキストでコピー」したバックアップを貼り付けてください。現在のデータは上書きされます。</p><textarea data-text></textarea>',
+        title: "貼り付けて復元",
+        body: '<p class="muted small">現在のデータは上書きされます</p><textarea data-text></textarea>',
         foot: '<button class="btn" data-close>キャンセル</button><button class="btn primary" data-go>復元</button>',
         onMount(m, close) {
           m.querySelector("[data-go]").addEventListener("click", () => {

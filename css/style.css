@@ -230,3 +230,21 @@ a { color: var(--accent); }
 .grid2 > * { min-width: 0; }
 .form-row select.grow, .form-row input.grow { flex: 1 1 0; width: 0; min-width: 0; }
 select { text-overflow: ellipsis; }
+
+/* ヘッダーの説明ボタン・説明画面 */
+.appbar { align-items: center; }
+.help-btn { flex: none; width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid currentColor; background: none; color: var(--bar-ink); font-weight: 800; font-size: 15px; cursor: pointer; opacity: .9; }
+.help-btn.on { background: var(--bar-ink); color: var(--bar); }
+.help h3 { font-size: 15px; margin: 14px 0 6px; }
+.help h3:first-child { margin-top: 0; }
+.help p, .help li { font-size: 14px; }
+.help ul { margin: 4px 0; padding-left: 1.2em; }
+.help li { margin: 3px 0; }
+.help dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 4px 0; font-size: 14px; }
+.help dt { font-weight: 700; white-space: nowrap; }
+.help dd { margin: 0; }
+.help .ex { display: inline-flex; gap: 3px; vertical-align: middle; }
+@media (max-width: 560px) {
+  .help dl { grid-template-columns: 1fr; gap: 0; }
+  .help dd { margin: 0 0 8px; color: var(--ink2); }
+}
