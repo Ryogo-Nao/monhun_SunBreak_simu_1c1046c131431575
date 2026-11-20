@@ -310,3 +310,10 @@ select { text-overflow: ellipsis; }
 :root.kb-open .modal { max-height: calc(var(--vv-h, 100dvh) - 8px); border-radius: 16px 16px 0 0; padding-bottom: 0; }
 :root.kb-open .tabbar, :root.kb-open .runbar { display: none; }
 :root.kb-open body { padding-bottom: 0; }
+
+/* ===== 端末の「視差効果を減らす／動きを減らす」設定に従い、動きを止める ===== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+  .btn:active { transform: none; }
+  .toast, .toast.show { transform: translateX(-50%); }
+}
