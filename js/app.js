@@ -843,25 +843,34 @@ function quriousForm(q, base, asCopy = false) {
   const createdAt = src?.createdAt || Date.now();
   const enabled = src ? src.enabled !== false : true;
   const isNew = !q || asCopy;
-  // 編集用の状態（絶対値）
-  const cur = { base: src ? src.base : base?.id, slots: [], skills: {}, def: 0, res: [0, 0, 0, 0, 0], note: src?.note || "" };
+  // 編集用の状態（スロット・スキルは錬成後の値、防御・耐性はゲーム画面の表示どおり増減で持つ）
+  const cur = { base: src ? src.base : base?.id, slots: [], skills: {}, defDelta: 0, resDelta: [0, 0, 0, 0, 0], note: src?.note || "" };
   const loadFromBase = (keepSkills) => {
     const b = ARMOR[cur.base];
     if (!b) return;
     if (!keepSkills) {
       cur.slots = b.slots.slice();
       cur.skills = { ...b.skills };
-      cur.def = b.def;
-      cur.res = b.res.slice();
+      cur.defDelta = 0;
+      cur.resDelta = [0, 0, 0, 0, 0];
     }
   };
   if (src && ARMOR[src.base]) {
     const it = quriousItem(src);
     cur.slots = it.slots.slice();
     cur.skills = { ...it.skills };
-    cur.def = it.def;
-    cur.res = it.res.slice();
+    cur.defDelta = src.defDelta || 0;
+    cur.resDelta = [0, 1, 2, 3, 4].map((i) => (src.resDelta || [])[i] || 0);
   } else loadFromBase(false);
+  // 増減のプルダウン（上ほど大きい値）。iPhone の数字キーボードにはマイナスがないため選択式にする
+  const signed = (v) => (v > 0 ? "+" + v : String(v));
+  const deltaOptions = (hi, lo, v) => {
+    const top = Math.max(hi, v), bottom = Math.min(lo, v);
+    let h = "";
+    for (let x = top; x >= bottom; x--) h += `<option value="${x}" ${x === v ? "selected" : ""}>${signed(x)}</option>`;
+    return h;
+  };
+  const totalLine = (b) => `計 防御${b.def + cur.defDelta} ／ ${RES_LABEL.map((l, i) => l + (b.res[i] + cur.resDelta[i])).join(" ")}`;
 
   openModal({
     title: asCopy ? "傀異錬成防具を複製" : isNew ? "傀異錬成防具を登録" : "傀異錬成防具を編集",
@@ -885,17 +894,18 @@ function quriousForm(q, base, asCopy = false) {
         f.innerHTML = baseSec +
           fsec("スロット", slotSelects(cur.slots, "slot")) +
           fsec("スキル", `${skillRows}<button class="btn sm" data-add-sk style="margin-top:6px">＋スキル追加</button>`) +
-          fsec("防御・耐性", fld("防御力", `<input type="number" inputmode="numeric" data-def value="${cur.def}">`) +
-            `<div class="g5">${RES_LABEL.map((l, i) => `<label class="cell"><span>${l}耐性</span><input type="number" inputmode="numeric" data-res="${i}" value="${cur.res[i]}"></label>`).join("")}</div>`) +
+          fsec("防御・耐性の増減", fld("防御力", `<select data-def>${deltaOptions(60, -30, cur.defDelta)}</select>`) +
+            `<div class="g5">${RES_LABEL.map((l, i) => `<label class="cell"><span>${l}耐性</span><select data-res="${i}">${deltaOptions(10, -10, cur.resDelta[i])}</select></label>`).join("")}</div>
+            <div class="muted small" style="margin-top:8px" data-total>${totalLine(b)}</div>`) +
           fsec("", fld("メモ", `<input type="text" data-note value="${esc(cur.note)}" placeholder="例: 攻撃特化">`));
       };
       const sync = () => {
         if (!ARMOR[cur.base]) return;
         cur.slots = readSlots(f, "slot");
         f.querySelectorAll("[data-sk]").forEach((row) => { cur.skills[row.dataset.sk] = +row.querySelector("[data-sklv]").value; });
-        const num = (el, d) => (el && el.value !== "" ? +el.value : d);
-        cur.def = num(f.querySelector("[data-def]"), ARMOR[cur.base].def);
-        cur.res = [0, 1, 2, 3, 4].map((i) => num(f.querySelector(`[data-res="${i}"]`), ARMOR[cur.base].res[i]));
+        const num = (el) => (el && el.value !== "" ? +el.value : 0);
+        cur.defDelta = num(f.querySelector("[data-def]"));
+        cur.resDelta = [0, 1, 2, 3, 4].map((i) => num(f.querySelector(`[data-res="${i}"]`)));
         cur.note = f.querySelector("[data-note]")?.value || "";
       };
       render();
@@ -924,8 +934,8 @@ function quriousForm(q, base, asCopy = false) {
           if (d) delta[k] = d;
         }
         const rec = {
-          id, base: b.id, slots: cur.slots, delta, defDelta: cur.def - b.def,
-          resDelta: cur.res.map((v, i) => v - b.res[i]), note: cur.note, enabled, createdAt,
+          id, base: b.id, slots: cur.slots, delta, defDelta: cur.defDelta,
+          resDelta: cur.resDelta.slice(), note: cur.note, enabled, createdAt,
         };
         update((st) => {
           const i = st.qurious.findIndex((x) => x.id === rec.id);
@@ -1468,7 +1478,8 @@ function helpBody(key) {
       </ul>`;
     case "qurious": return `
       <ul>
-        <li><b>＋登録</b>: ベース防具を選ぶと、そのスロット・スキル・防御・耐性が入った状態で始まります。ゲーム画面に表示される<b>錬成後の値</b>に書き換えてください。</li>
+        <li><b>＋登録</b>: ベース防具を選ぶと、そのスロット・スキル・防御・耐性が入った状態で始まります。スロット・スキルは<b>錬成後の値</b>に書き換えてください。</li>
+        <li><b>防御・耐性の増減</b>: ゲーム画面に表示される増減（例: 防御+12、火-2）をそのまま選びます。下の「計」に合計値が出ます。</li>
         <li><b>スキル</b>: Lvを変える／<b>✕</b>で外す（錬成で消えたスキル）／<b>＋スキル追加</b>で追加します。</li>
         <li><b>インポート</b>: 泣きシミュ形式のCSVを貼り付けて一括登録します。<br><code>ベース防具名,防御,火,水,雷,氷,龍,スロ1増,スロ2増,スロ3増,スキル,増減,…</code></li>
         <li><b>検索対象</b>: OFFにすると検索に使いません。</li>
