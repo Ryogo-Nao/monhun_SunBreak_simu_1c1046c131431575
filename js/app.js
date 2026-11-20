@@ -1580,7 +1580,11 @@ function markTabs(t) {
   const hb = document.getElementById("help-btn");
   hb.classList.toggle("on", t === "help");
   hb.setAttribute("aria-pressed", t === "help" ? "true" : "false");
+  // URL に画面名を反映（#results など）。ブックマークや共有でその画面を直接開ける。
+  // 履歴は積まない（replaceState）: ホーム画面アプリには戻るボタンがなく、戻る操作で画面が行き来すると混乱するため
+  if (TABS.includes(t) && location.hash !== "#" + t) history.replaceState(null, "", "#" + t);
 }
+const TABS = ["search", "results", "equip", "mysets", "settings"];
 function setTab(t) {
   tab = t;
   helpBack = null;
@@ -1932,6 +1936,9 @@ async function init() {
     view.innerHTML = `<div class="notice">データの読み込みに失敗しました: ${esc(e.message)}</div>`;
     return;
   }
+  const h = location.hash.slice(1);
+  if (TABS.includes(h)) tab = h; // URL の #画面名 から開く
+  markTabs(tab);
   rerender();
   if ("serviceWorker" in navigator && location.protocol === "https:") {
     navigator.serviceWorker.register("sw.js").catch(() => {});
