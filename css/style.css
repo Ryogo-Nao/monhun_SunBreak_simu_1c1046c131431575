@@ -94,9 +94,8 @@ input, select, textarea { font-size: 16px; } /* iOS のズーム防止 */
   border: 0; background: none; height: var(--tabbar-h); display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 1px; font-size: 11px; color: var(--ink2); cursor: pointer;
 }
-.tabbar button .ic { font-size: 20px; line-height: 1.1; filter: grayscale(1); opacity: .7; }
+.tabbar button .ic { width: 24px; height: 24px; display: block; }
 .tabbar button.on { color: var(--accent); font-weight: 700; }
-.tabbar button.on .ic { filter: none; opacity: 1; }
 .tabbar .badge { position: absolute; }
 
 h2 { font-size: 16px; margin: 18px 0 8px; display: flex; align-items: center; gap: 8px; }
@@ -317,3 +316,6 @@ select { text-overflow: ellipsis; }
   .btn:active { transform: none; }
   .toast, .toast.show { transform: translateX(-50%); }
 }
+
+/* ボタン内の小さいアイコン（SVG） */
+.ico { width: 1.1em; height: 1.1em; flex: none; vertical-align: -.15em; }

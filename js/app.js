@@ -43,6 +43,7 @@ let resultShown = 30;
 // ユーティリティ
 // ======================================================================
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ICON_STAR = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3.5 2.6 5.3 5.9.8-4.3 4.1 1 5.8L12 16.8l-5.2 2.7 1-5.8-4.3-4.1 5.9-.8z"/></svg>';
 function toast(msg) {
   const t = document.getElementById("toast");
   t.textContent = msg;
@@ -660,7 +661,7 @@ function resultCard(r, targets) {
     <div class="res-head"><span class="no">#${r._i + 1}</span>
       <span class="muted small">防御 <b>${r.def}</b></span>
       <span class="muted small">空き ${freeHTML(r.free, r.freeW)}</span>
-      <button class="btn sm right" data-act="save-set" data-i="${r._i}">⭐保存</button></div>
+      <button class="btn sm right" data-act="save-set" data-i="${r._i}">${ICON_STAR}保存</button></div>
     <table class="pieces">${rows}</table>
     <div class="chips" style="margin-top:6px">${skillChips(skills, { targets, result: true })}</div>
     <div class="muted small" style="margin-top:4px">耐性 ${RES_LABEL.map((l, i) => l + r.res[i]).join(" ")}</div>
@@ -1407,7 +1408,7 @@ function helpBody(key) {
         <li>スキルの色: <span class="chip ok">緑</span> 条件を達成、<span class="chip ng">赤</span> 未達（希望スキル）。</li>
         ${w ? "<li>シリーズ／グループスキルは「4pt→力自慢Ⅱ」のようにポイントと発動スキルを表示します。</li>" : ""}
         <li><b>同等+N</b>: 条件スキルとスロットが同じ装備が他にN件あります。押すと一覧を表示します。</li>
-        <li><b>⭐保存</b>: マイセットに保存します。</li>
+        <li><b>${ICON_STAR}保存</b>: マイセットに保存します。</li>
       </ul>
       <h3>並び替え・絞り込み</h3>
       <ul>
@@ -1479,7 +1480,7 @@ function helpBody(key) {
       </ul>`;
     case "mysets": return `
       <ul>
-        <li>結果タブの<b>⭐保存</b>で追加されます。</li>
+        <li>結果タブの<b>${ICON_STAR}保存</b>で追加されます。</li>
         <li>メモ欄に自由に名前を付けられます。並び替えもできます。</li>
       </ul>`;
     case "settings": return `
