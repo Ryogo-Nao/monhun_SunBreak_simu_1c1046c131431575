@@ -18,7 +18,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: node test/solver.test.mjs && node test/search.test.mjs && node test/wilds.test.mjs
+      - run: node test/solver.test.mjs && node test/search.test.mjs && node test/wilds.test.mjs && node test/resolve.test.mjs
   deploy:
     needs: test
     runs-on: ubuntu-latest

@@ -1,1 +1,1 @@
-{"type":"module","private":true,"scripts":{"test":"node test/solver.test.mjs && node test/search.test.mjs && node test/wilds.test.mjs"}}
+{"type":"module","private":true,"scripts":{"test":"node test/solver.test.mjs && node test/search.test.mjs && node test/wilds.test.mjs && node test/resolve.test.mjs"}}
