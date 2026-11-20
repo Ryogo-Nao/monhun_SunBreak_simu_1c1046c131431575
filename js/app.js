@@ -1553,17 +1553,15 @@ function openHelp() {
   helpBack = { tab, scroll: window.scrollY };
   helpKey = tab === "equip" ? equipTab : tab;
   tab = "help";
-  document.querySelectorAll("#tabbar button").forEach((b) => b.classList.remove("on"));
-  document.getElementById("help-btn").classList.add("on");
+  markTabs("help");
   renderHelp();
   window.scrollTo(0, 0);
 }
 function closeHelp() {
   const back = helpBack || { tab: "search", scroll: 0 };
   helpBack = null;
-  document.getElementById("help-btn").classList.remove("on");
   tab = back.tab;
-  document.querySelectorAll("#tabbar button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  markTabs(tab);
   rerender();
   window.scrollTo(0, back.scroll);
 }
@@ -1572,11 +1570,21 @@ document.getElementById("help-btn").addEventListener("click", openHelp);
 // ======================================================================
 // ルーティング・イベント
 // ======================================================================
+// 下部タブの選択表示。見た目（on）に加え、読み上げ機能にも現在の画面を伝える（aria-current）
+function markTabs(t) {
+  document.querySelectorAll("#tabbar button").forEach((b) => {
+    const on = b.dataset.tab === t;
+    b.classList.toggle("on", on);
+    if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
+  const hb = document.getElementById("help-btn");
+  hb.classList.toggle("on", t === "help");
+  hb.setAttribute("aria-pressed", t === "help" ? "true" : "false");
+}
 function setTab(t) {
   tab = t;
   helpBack = null;
-  document.getElementById("help-btn").classList.remove("on");
-  document.querySelectorAll("#tabbar button").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
+  markTabs(t);
   rerender();
   window.scrollTo(0, 0);
 }
