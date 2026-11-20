@@ -198,10 +198,14 @@ function download(name, text) {
 function openModal({ title, body, foot = "", onMount, wide }) {
   const back = document.createElement("div");
   back.className = "modal-back";
-  back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" ${wide ? 'style="max-width:860px"' : ""}>
+  back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" tabindex="-1" aria-label="${esc(title)}" ${wide ? 'style="max-width:860px"' : ""}>
     <div class="mh"><h3>${esc(title)}</h3><button class="btn sm" data-close>閉じる</button></div>
     <div class="mb">${body}</div>${foot ? `<div class="mf">${foot}</div>` : ""}</div>`;
-  const close = () => back.remove();
+  const opener = document.activeElement; // 閉じたらここへフォーカスを戻す（キーボード操作用）
+  const close = () => {
+    back.remove();
+    if (opener && opener.isConnected && typeof opener.focus === "function") opener.focus({ preventScroll: true });
+  };
   // 登録・編集など保存ボタンのある画面は、入力を変えた後に外側をうっかり押しても閉じない（確認する）
   const hasSave = !!back.querySelector("[data-save], [data-go]");
   let dirty = false;
@@ -217,10 +221,29 @@ function openModal({ title, body, foot = "", onMount, wide }) {
     else if (e.target === back) closeSafely();
     else if (e.target.closest(".mb button")) dirty = true; // スキル追加・✕などのボタン操作も変更とみなす
   });
+  back._closeSafely = closeSafely; // Esc キーで閉じる用
   modalRoot.appendChild(back);
-  onMount && onMount(back.querySelector(".modal"), close);
+  const modal = back.querySelector(".modal");
+  onMount && onMount(modal, close);
+  // 開いたらフォーカスを画面（シート）自体へ移す。入力欄には移さない（スマホでキーボードが勝手に出ないように）
+  if (!modal.contains(document.activeElement)) modal.focus({ preventScroll: true });
   return close;
 }
+
+// キーボード操作: Esc で一番上の画面（シート）を閉じる／Tab のフォーカスを画面内に留める
+document.addEventListener("keydown", (e) => {
+  const top = modalRoot.lastElementChild;
+  if (!top) return;
+  if (e.key === "Escape") { e.preventDefault(); top._closeSafely ? top._closeSafely() : top.remove(); return; }
+  if (e.key !== "Tab") return;
+  const items = [...top.querySelectorAll('button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea, [href], label.btn')].filter((el) => el.offsetParent !== null);
+  if (!items.length) return;
+  const first = items[0], lastEl = items[items.length - 1];
+  if (!top.contains(document.activeElement) || (e.shiftKey ? document.activeElement === first || document.activeElement === top.querySelector(".modal") : document.activeElement === lastEl)) {
+    e.preventDefault();
+    (e.shiftKey ? lastEl : first).focus();
+  }
+});
 
 // スキル選択モーダル  filter: (skill) => boolean
 function pickSkill({ title = "スキルを選択", onPick, multi = false, selected = [], filter = null }) {
