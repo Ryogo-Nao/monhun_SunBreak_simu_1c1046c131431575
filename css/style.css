@@ -296,6 +296,7 @@ select { text-overflow: ellipsis; }
 .g2 > *, .g3 > *, .g5 > * { width: 100%; min-width: 0; }
 .g5 .cell { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--ink2); text-align: center; }
 .g5 .cell input { width: 100%; text-align: center; padding: 6px 2px; }
+.g5 .cell select { width: 100%; min-width: 0; padding: 6px 14px 6px 4px; text-align: center; }
 /* スキル行: 名前 / Lv / 削除 */
 .skill-row { display: grid; grid-template-columns: minmax(0, 1fr) 92px 40px; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
 .skill-row:first-of-type { border-top: 0; padding-top: 0; }
