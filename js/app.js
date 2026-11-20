@@ -43,12 +43,13 @@ let resultShown = 30;
 // ユーティリティ
 // ======================================================================
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ICON_STAR = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3.5 2.6 5.3 5.9.8-4.3 4.1 1 5.8L12 16.8l-5.2 2.7 1-5.8-4.3-4.1 5.9-.8z"/></svg>';
 function toast(msg) {
   const t = document.getElementById("toast");
   t.textContent = msg;
   t.classList.add("show");
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => t.classList.remove("show"), 1800);
+  toast._t = setTimeout(() => t.classList.remove("show"), 3500); // 読み切れるよう3〜5秒の範囲で表示
 }
 const weaponTypes = () => (isW() ? M.weaponTypes : SB_WEAPON_TYPES);
 
@@ -197,17 +198,52 @@ function download(name, text) {
 function openModal({ title, body, foot = "", onMount, wide }) {
   const back = document.createElement("div");
   back.className = "modal-back";
-  back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" ${wide ? 'style="max-width:860px"' : ""}>
+  back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" tabindex="-1" aria-label="${esc(title)}" ${wide ? 'style="max-width:860px"' : ""}>
     <div class="mh"><h3>${esc(title)}</h3><button class="btn sm" data-close>閉じる</button></div>
     <div class="mb">${body}</div>${foot ? `<div class="mf">${foot}</div>` : ""}</div>`;
-  const close = () => back.remove();
+  const opener = document.activeElement; // 閉じたらここへフォーカスを戻す（キーボード操作用）
+  const close = () => {
+    back.remove();
+    if (opener && opener.isConnected && typeof opener.focus === "function") opener.focus({ preventScroll: true });
+  };
+  // 登録・編集など保存ボタンのある画面は、入力を変えた後に外側をうっかり押しても閉じない（確認する）
+  const hasSave = !!back.querySelector("[data-save], [data-go]");
+  let dirty = false;
+  const markDirty = (e) => { if (!e.target.closest || !e.target.closest(".modal .mf")) dirty = true; };
+  back.addEventListener("input", markDirty);
+  back.addEventListener("change", markDirty);
+  const closeSafely = () => {
+    if (hasSave && dirty && !confirm("入力内容を破棄して閉じますか？")) return;
+    close();
+  };
   back.addEventListener("click", (e) => {
-    if (e.target === back || e.target.closest("[data-close]")) close();
+    if (e.target.closest("[data-close]")) close();
+    else if (e.target === back) closeSafely();
+    else if (e.target.closest(".mb button")) dirty = true; // スキル追加・✕などのボタン操作も変更とみなす
   });
+  back._closeSafely = closeSafely; // Esc キーで閉じる用
   modalRoot.appendChild(back);
-  onMount && onMount(back.querySelector(".modal"), close);
+  const modal = back.querySelector(".modal");
+  onMount && onMount(modal, close);
+  // 開いたらフォーカスを画面（シート）自体へ移す。入力欄には移さない（スマホでキーボードが勝手に出ないように）
+  if (!modal.contains(document.activeElement)) modal.focus({ preventScroll: true });
   return close;
 }
+
+// キーボード操作: Esc で一番上の画面（シート）を閉じる／Tab のフォーカスを画面内に留める
+document.addEventListener("keydown", (e) => {
+  const top = modalRoot.lastElementChild;
+  if (!top) return;
+  if (e.key === "Escape") { e.preventDefault(); top._closeSafely ? top._closeSafely() : top.remove(); return; }
+  if (e.key !== "Tab") return;
+  const items = [...top.querySelectorAll('button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea, [href], label.btn')].filter((el) => el.offsetParent !== null);
+  if (!items.length) return;
+  const first = items[0], lastEl = items[items.length - 1];
+  if (!top.contains(document.activeElement) || (e.shiftKey ? document.activeElement === first || document.activeElement === top.querySelector(".modal") : document.activeElement === lastEl)) {
+    e.preventDefault();
+    (e.shiftKey ? lastEl : first).focus();
+  }
+});
 
 // スキル選択モーダル  filter: (skill) => boolean
 function pickSkill({ title = "スキルを選択", onPick, multi = false, selected = [], filter = null }) {
@@ -660,7 +696,7 @@ function resultCard(r, targets) {
     <div class="res-head"><span class="no">#${r._i + 1}</span>
       <span class="muted small">防御 <b>${r.def}</b></span>
       <span class="muted small">空き ${freeHTML(r.free, r.freeW)}</span>
-      <button class="btn sm right" data-act="save-set" data-i="${r._i}">⭐保存</button></div>
+      <button class="btn sm right" data-act="save-set" data-i="${r._i}">${ICON_STAR}保存</button></div>
     <table class="pieces">${rows}</table>
     <div class="chips" style="margin-top:6px">${skillChips(skills, { targets, result: true })}</div>
     <div class="muted small" style="margin-top:4px">耐性 ${RES_LABEL.map((l, i) => l + r.res[i]).join(" ")}</div>
@@ -1203,11 +1239,12 @@ function decoView() {
       ${isW() ? `<div class="seg" style="margin-top:6px" data-deco-type>${[["", "すべて"], ["W", "武器用"], ["A", "防具用"]].map(([k, l]) => `<button data-dt="${k}" class="${(st.ui.decoType || "") === k ? "on" : ""}">${l}</button>`).join("")}</div>` : ""}
       ${sortBar("deco", [["skill", "スキル名"], ["name", "名前"], ["size", "スロットLv"], ["lv", "スキルLv"], ["count", "所持数"], ...(isW() ? [["type", "種別（武器/防具）"]] : [])], "skill", "asc")}
       <div class="row"><button class="btn sm" data-act="deco-unlimited">全て無制限</button><button class="btn sm" data-act="deco-zero">表示中を0個に</button></div>
+      <p class="muted small" style="margin:6px 0 0">所持数: 空欄（∞）＝無制限</p>
     </div>
     <div class="list cols" style="margin-top:10px" id="deco-list">${arr.map((d) => {
       const c = st.decoCount[d.name];
       return `<div class="item" data-dn="${esc(d.name)}"><div class="ttl">${slotTag(d.size, d.type)}<span class="grow">${esc(d.name)}</span>
-        <input type="number" min="0" inputmode="numeric" data-act="deco-count" value="${c == null ? "" : c}" placeholder="∞" style="width:72px"></div>
+        <input type="number" min="0" inputmode="numeric" data-act="deco-count" value="${c == null ? "" : c}" placeholder="∞" aria-label="${esc(d.name)}の所持数（空欄で無制限）" style="width:72px"></div>
         <div class="meta">${isW() ? `<span class="tag">${d.type === "W" ? "武器用" : "防具用"}</span>` : ""}${Object.entries(d.skills).map(([k, v]) => `${esc(k)} +${v}`).join(" ／ ")}</div></div>`;
     }).join("")}</div>`;
 }
@@ -1407,7 +1444,7 @@ function helpBody(key) {
         <li>スキルの色: <span class="chip ok">緑</span> 条件を達成、<span class="chip ng">赤</span> 未達（希望スキル）。</li>
         ${w ? "<li>シリーズ／グループスキルは「4pt→力自慢Ⅱ」のようにポイントと発動スキルを表示します。</li>" : ""}
         <li><b>同等+N</b>: 条件スキルとスロットが同じ装備が他にN件あります。押すと一覧を表示します。</li>
-        <li><b>⭐保存</b>: マイセットに保存します。</li>
+        <li><b>${ICON_STAR}保存</b>: マイセットに保存します。</li>
       </ul>
       <h3>並び替え・絞り込み</h3>
       <ul>
@@ -1479,7 +1516,7 @@ function helpBody(key) {
       </ul>`;
     case "mysets": return `
       <ul>
-        <li>結果タブの<b>⭐保存</b>で追加されます。</li>
+        <li>結果タブの<b>${ICON_STAR}保存</b>で追加されます。</li>
         <li>メモ欄に自由に名前を付けられます。並び替えもできます。</li>
       </ul>`;
     case "settings": return `
@@ -1517,17 +1554,15 @@ function openHelp() {
   helpBack = { tab, scroll: window.scrollY };
   helpKey = tab === "equip" ? equipTab : tab;
   tab = "help";
-  document.querySelectorAll("#tabbar button").forEach((b) => b.classList.remove("on"));
-  document.getElementById("help-btn").classList.add("on");
+  markTabs("help");
   renderHelp();
   window.scrollTo(0, 0);
 }
 function closeHelp() {
   const back = helpBack || { tab: "search", scroll: 0 };
   helpBack = null;
-  document.getElementById("help-btn").classList.remove("on");
   tab = back.tab;
-  document.querySelectorAll("#tabbar button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  markTabs(tab);
   rerender();
   window.scrollTo(0, back.scroll);
 }
@@ -1536,11 +1571,25 @@ document.getElementById("help-btn").addEventListener("click", openHelp);
 // ======================================================================
 // ルーティング・イベント
 // ======================================================================
+// 下部タブの選択表示。見た目（on）に加え、読み上げ機能にも現在の画面を伝える（aria-current）
+function markTabs(t) {
+  document.querySelectorAll("#tabbar button").forEach((b) => {
+    const on = b.dataset.tab === t;
+    b.classList.toggle("on", on);
+    if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
+  const hb = document.getElementById("help-btn");
+  hb.classList.toggle("on", t === "help");
+  hb.setAttribute("aria-pressed", t === "help" ? "true" : "false");
+  // URL に画面名を反映（#results など）。ブックマークや共有でその画面を直接開ける。
+  // 履歴は積まない（replaceState）: ホーム画面アプリには戻るボタンがなく、戻る操作で画面が行き来すると混乱するため
+  if (TABS.includes(t) && location.hash !== "#" + t) history.replaceState(null, "", "#" + t);
+}
+const TABS = ["search", "results", "equip", "mysets", "settings"];
 function setTab(t) {
   tab = t;
   helpBack = null;
-  document.getElementById("help-btn").classList.remove("on");
-  document.querySelectorAll("#tabbar button").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
+  markTabs(t);
   rerender();
   window.scrollTo(0, 0);
 }
@@ -1888,6 +1937,9 @@ async function init() {
     view.innerHTML = `<div class="notice">データの読み込みに失敗しました: ${esc(e.message)}</div>`;
     return;
   }
+  const h = location.hash.slice(1);
+  if (TABS.includes(h)) tab = h; // URL の #画面名 から開く
+  markTabs(tab);
   rerender();
   if ("serviceWorker" in navigator && location.protocol === "https:") {
     navigator.serviceWorker.register("sw.js").catch(() => {});
