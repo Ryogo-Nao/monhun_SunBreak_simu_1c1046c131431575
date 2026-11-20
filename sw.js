@@ -1,5 +1,5 @@
 // オフライン対応: ネットワーク優先、失敗時にキャッシュを使う
-const CACHE = "mhrsb-sim-v4";
+const CACHE = "mhrsb-sim-v5";
 const ASSETS = ["./", "index.html", "css/style.css", "js/app.js", "js/store.js", "js/solver.js", "js/worker.js", "js/search.js", "data/wilds/master.json", "data/master.json", "manifest.webmanifest", "icons/icon.svg", "icons/apple-touch-icon.png"];
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
