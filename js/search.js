@@ -99,3 +99,14 @@ export function matchAny(texts, query, fuzzy = true) {
   if (!terms.length) return true;
   return terms.every((t) => texts.some((x) => x && match(x, t, fuzzy)));
 }
+
+// あいまいな名前を1つに決める（インポート用）。scoreOf(x) は上の score と同じ尺度（9=不一致）
+// 決まるのは: 候補が1件だけ／完全一致・前方一致の最上位が1件だけ。それ以外（候補が複数・0件）は pick=null
+export function resolveByScore(list, q, scoreOf) {
+  const scored = list.map((x, i) => [x, scoreOf(x), i]).filter((x) => x[1] < 9).sort((a, b) => a[1] - b[1] || a[2] - b[2]);
+  if (!scored.length) return { pick: null, count: 0 };
+  const best = scored[0][1];
+  const top = scored.filter((x) => x[1] === best);
+  if (scored.length === 1 || (best <= 1 && top.length === 1)) return { pick: scored[0][0], count: scored.length };
+  return { pick: null, count: scored.length };
+}

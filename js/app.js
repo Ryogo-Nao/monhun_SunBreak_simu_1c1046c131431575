@@ -1,5 +1,5 @@
 import { getState, getGame, setGame, update, save, exportJSON, importJSON, resetAll, uid, setNormalizer } from "./store.js";
-import { norm, match, matchAny, score } from "./search.js";
+import { norm, match, matchAny, score, resolveByScore } from "./search.js";
 
 // ======================================================================
 // ゲームタイトル定義
@@ -43,12 +43,13 @@ let resultShown = 30;
 // ユーティリティ
 // ======================================================================
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ICON_STAR = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3.5 2.6 5.3 5.9.8-4.3 4.1 1 5.8L12 16.8l-5.2 2.7 1-5.8-4.3-4.1 5.9-.8z"/></svg>';
 function toast(msg) {
   const t = document.getElementById("toast");
   t.textContent = msg;
   t.classList.add("show");
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => t.classList.remove("show"), 1800);
+  toast._t = setTimeout(() => t.classList.remove("show"), 3500); // 読み切れるよう3〜5秒の範囲で表示
 }
 const weaponTypes = () => (isW() ? M.weaponTypes : SB_WEAPON_TYPES);
 
@@ -234,27 +235,62 @@ function download(name, text) {
 function openModal({ title, body, foot = "", onMount, wide }) {
   const back = document.createElement("div");
   back.className = "modal-back";
-  back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" ${wide ? 'style="max-width:860px"' : ""}>
+  back.innerHTML = `<div class="modal" role="dialog" aria-modal="true" tabindex="-1" aria-label="${esc(title)}" ${wide ? 'style="max-width:860px"' : ""}>
     <div class="mh"><h3>${esc(title)}</h3><button class="btn sm" data-close>閉じる</button></div>
     <div class="mb">${body}</div>${foot ? `<div class="mf">${foot}</div>` : ""}</div>`;
-  const close = () => back.remove();
+  const opener = document.activeElement; // 閉じたらここへフォーカスを戻す（キーボード操作用）
+  const close = () => {
+    back.remove();
+    if (opener && opener.isConnected && typeof opener.focus === "function") opener.focus({ preventScroll: true });
+  };
+  // 登録・編集など保存ボタンのある画面は、入力を変えた後に外側をうっかり押しても閉じない（確認する）
+  const hasSave = !!back.querySelector("[data-save], [data-go]");
+  let dirty = false;
+  const markDirty = (e) => { if (!e.target.closest || !e.target.closest(".modal .mf")) dirty = true; };
+  back.addEventListener("input", markDirty);
+  back.addEventListener("change", markDirty);
+  const closeSafely = () => {
+    if (hasSave && dirty && !confirm("入力内容を破棄して閉じますか？")) return;
+    close();
+  };
   back.addEventListener("click", (e) => {
-    if (e.target === back || e.target.closest("[data-close]")) close();
+    if (e.target.closest("[data-close]")) close();
+    else if (e.target === back) closeSafely();
+    else if (e.target.closest(".mb button")) dirty = true; // スキル追加・✕などのボタン操作も変更とみなす
   });
+  back._closeSafely = closeSafely; // Esc キーで閉じる用
   modalRoot.appendChild(back);
-  onMount && onMount(back.querySelector(".modal"), close);
+  const modal = back.querySelector(".modal");
+  onMount && onMount(modal, close);
+  // 開いたらフォーカスを画面（シート）自体へ移す。入力欄には移さない（スマホでキーボードが勝手に出ないように）
+  if (!modal.contains(document.activeElement)) modal.focus({ preventScroll: true });
   return close;
 }
 
+// キーボード操作: Esc で一番上の画面（シート）を閉じる／Tab のフォーカスを画面内に留める
+document.addEventListener("keydown", (e) => {
+  const top = modalRoot.lastElementChild;
+  if (!top) return;
+  if (e.key === "Escape") { e.preventDefault(); top._closeSafely ? top._closeSafely() : top.remove(); return; }
+  if (e.key !== "Tab") return;
+  const items = [...top.querySelectorAll('button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea, [href], label.btn')].filter((el) => el.offsetParent !== null);
+  if (!items.length) return;
+  const first = items[0], lastEl = items[items.length - 1];
+  if (!top.contains(document.activeElement) || (e.shiftKey ? document.activeElement === first || document.activeElement === top.querySelector(".modal") : document.activeElement === lastEl)) {
+    e.preventDefault();
+    (e.shiftKey ? lastEl : first).focus();
+  }
+});
+
 // スキル選択モーダル  filter: (skill) => boolean
-function pickSkill({ title = "スキルを選択", onPick, multi = false, selected = [], filter = null }) {
-  let q = "", cat = "";
+function pickSkill({ title = "スキルを選択", onPick, multi = false, selected = [], filter = null, query = "" }) {
+  let q = query, cat = "";
   const sel = new Set(selected);
   const base = M.skills.filter((s) => s.cat !== "汎用錬成スキル" && (!filter || filter(s)));
   const cats = CATS.filter((c) => base.some((s) => s.cat === c));
   openModal({
     title,
-    body: `<input type="search" placeholder="スキル名の一部・読み（例: 弱特、こうげき）" data-q style="width:100%">
+    body: `<input type="search" placeholder="スキル名の一部・読み（例: 弱特、こうげき）" data-q value="${esc(q)}" style="width:100%">
       <div class="chips" style="margin:8px 0" data-cats>
         <button class="chip on" data-cat="">すべて</button>${cats.map((c) => `<button class="chip" data-cat="${esc(c)}">${esc(c)}</button>`).join("")}
       </div>
@@ -301,12 +337,12 @@ function pickSkill({ title = "スキルを選択", onPick, multi = false, select
 }
 
 // 防具選択モーダル（傀異錬成のベース）
-function pickArmor({ onPick, part = "head" }) {
-  let q = "", p = part;
+function pickArmor({ onPick, part = "head", query = "" }) {
+  let q = query, p = part;
   openModal({
     title: "ベース防具を選択",
     body: `<div class="seg" data-parts>${PARTS.map((x) => `<button data-p="${x}" class="${x === p ? "on" : ""}">${PART_LABEL[x]}</button>`).join("")}</div>
-      <input type="search" placeholder="防具名・スキル名で検索" data-q style="width:100%;margin-top:8px">
+      <input type="search" placeholder="防具名・スキル名で検索" data-q value="${esc(q)}" style="width:100%;margin-top:8px">
       <div class="pick-list" data-list style="margin-top:6px"></div>`,
     onMount(m, close) {
       const list = m.querySelector("[data-list]");
@@ -695,7 +731,7 @@ function resultCard(r, targets) {
     <div class="res-head"><span class="no">#${r._i + 1}</span>
       <span class="muted small">防御 <b>${r.def}</b></span>
       <span class="muted small">空き ${freeHTML(r.free, r.freeW)}</span>
-      <button class="btn sm right" data-act="save-set" data-i="${r._i}">⭐保存</button></div>
+      <button class="btn sm right" data-act="save-set" data-i="${r._i}">${ICON_STAR}保存</button></div>
     <table class="pieces">${rows}</table>
     <div class="chips" style="margin-top:6px">${skillChips(skills, { targets, result: true })}</div>
     <div class="muted small" style="margin-top:4px">耐性 ${RES_LABEL.map((l, i) => l + r.res[i]).join(" ")}</div>
@@ -850,25 +886,34 @@ function quriousForm(q, base, asCopy = false) {
   const createdAt = src?.createdAt || Date.now();
   const enabled = src ? src.enabled !== false : true;
   const isNew = !q || asCopy;
-  // 編集用の状態（絶対値）
-  const cur = { base: src ? src.base : base?.id, slots: [], skills: {}, def: 0, res: [0, 0, 0, 0, 0], note: src?.note || "" };
+  // 編集用の状態（スロット・スキルは錬成後の値、防御・耐性はゲーム画面の表示どおり増減で持つ）
+  const cur = { base: src ? src.base : base?.id, slots: [], skills: {}, defDelta: 0, resDelta: [0, 0, 0, 0, 0], note: src?.note || "" };
   const loadFromBase = (keepSkills) => {
     const b = ARMOR[cur.base];
     if (!b) return;
     if (!keepSkills) {
       cur.slots = b.slots.slice();
       cur.skills = { ...b.skills };
-      cur.def = b.def;
-      cur.res = b.res.slice();
+      cur.defDelta = 0;
+      cur.resDelta = [0, 0, 0, 0, 0];
     }
   };
   if (src && ARMOR[src.base]) {
     const it = quriousItem(src);
     cur.slots = it.slots.slice();
     cur.skills = { ...it.skills };
-    cur.def = it.def;
-    cur.res = it.res.slice();
+    cur.defDelta = src.defDelta || 0;
+    cur.resDelta = [0, 1, 2, 3, 4].map((i) => (src.resDelta || [])[i] || 0);
   } else loadFromBase(false);
+  // 増減のプルダウン（上ほど大きい値）。iPhone の数字キーボードにはマイナスがないため選択式にする
+  const signed = (v) => (v > 0 ? "+" + v : String(v));
+  const deltaOptions = (hi, lo, v) => {
+    const top = Math.max(hi, v), bottom = Math.min(lo, v);
+    let h = "";
+    for (let x = top; x >= bottom; x--) h += `<option value="${x}" ${x === v ? "selected" : ""}>${signed(x)}</option>`;
+    return h;
+  };
+  const totalLine = (b) => `計 防御${b.def + cur.defDelta} ／ ${RES_LABEL.map((l, i) => l + (b.res[i] + cur.resDelta[i])).join(" ")}`;
 
   openModal({
     title: asCopy ? "傀異錬成防具を複製" : isNew ? "傀異錬成防具を登録" : "傀異錬成防具を編集",
@@ -892,17 +937,18 @@ function quriousForm(q, base, asCopy = false) {
         f.innerHTML = baseSec +
           fsec("スロット", slotSelects(cur.slots, "slot")) +
           fsec("スキル", `${skillRows}<button class="btn sm" data-add-sk style="margin-top:6px">＋スキル追加</button>`) +
-          fsec("防御・耐性", fld("防御力", `<input type="number" inputmode="numeric" data-def value="${cur.def}">`) +
-            `<div class="g5">${RES_LABEL.map((l, i) => `<label class="cell"><span>${l}耐性</span><input type="number" inputmode="numeric" data-res="${i}" value="${cur.res[i]}"></label>`).join("")}</div>`) +
+          fsec("防御・耐性の増減", fld("防御力", `<select data-def>${deltaOptions(60, -30, cur.defDelta)}</select>`) +
+            `<div class="g5">${RES_LABEL.map((l, i) => `<label class="cell"><span>${l}耐性</span><select data-res="${i}">${deltaOptions(10, -10, cur.resDelta[i])}</select></label>`).join("")}</div>
+            <div class="muted small" style="margin-top:8px" data-total>${totalLine(b)}</div>`) +
           fsec("", fld("メモ", `<input type="text" data-note value="${esc(cur.note)}" placeholder="例: 攻撃特化">`));
       };
       const sync = () => {
         if (!ARMOR[cur.base]) return;
         cur.slots = readSlots(f, "slot");
         f.querySelectorAll("[data-sk]").forEach((row) => { cur.skills[row.dataset.sk] = +row.querySelector("[data-sklv]").value; });
-        const num = (el, d) => (el && el.value !== "" ? +el.value : d);
-        cur.def = num(f.querySelector("[data-def]"), ARMOR[cur.base].def);
-        cur.res = [0, 1, 2, 3, 4].map((i) => num(f.querySelector(`[data-res="${i}"]`), ARMOR[cur.base].res[i]));
+        const num = (el) => (el && el.value !== "" ? +el.value : 0);
+        cur.defDelta = num(f.querySelector("[data-def]"));
+        cur.resDelta = [0, 1, 2, 3, 4].map((i) => num(f.querySelector(`[data-res="${i}"]`)));
         cur.note = f.querySelector("[data-note]")?.value || "";
       };
       render();
@@ -931,9 +977,10 @@ function quriousForm(q, base, asCopy = false) {
           if (d) delta[k] = d;
         }
         const rec = {
-          id, no: asCopy ? undefined : src?.no, base: b.id, slots: cur.slots, delta, defDelta: cur.def - b.def,
-          resDelta: cur.res.map((v, i) => v - b.res[i]), note: cur.note, enabled, createdAt,
+          id, no: asCopy ? undefined : src?.no, base: b.id, slots: cur.slots, delta, defDelta: cur.defDelta,
+          resDelta: cur.resDelta.slice(), note: cur.note, enabled, createdAt,
         };
+        if (!okToSave("qurious", rec)) return;
         update((st) => {
           const i = st.qurious.findIndex((x) => x.id === rec.id);
           if (i >= 0) st.qurious[i] = rec; else st.qurious.push(rec);
@@ -996,6 +1043,7 @@ function artianForm(a, asCopy = false) {
         if (s) cur.skills[s] = 1;
         cur.wslots = readSlots(m, "slot");
         cur.note = m.querySelector("[data-note]").value;
+        if (!okToSave("artians", cur)) return;
         update((st) => {
           const i = st.artians.findIndex((x) => x.id === cur.id);
           if (i >= 0) st.artians[i] = cur; else st.artians.push(cur);
@@ -1120,6 +1168,7 @@ function charmForm(c) {
         sync();
         const out = { ...cur, skills: cur.skills.filter((s) => s[0]) };
         if (!out.skills.length && !out.slots.length && !(out.wslots || []).length) { toast("スキルかスロットを入力してください"); return; }
+        if (!okToSave("charms", out)) return;
         update((st) => {
           const i = st.charms.findIndex((x) => x.id === out.id);
           if (i >= 0) st.charms[i] = out; else st.charms.push(out);
@@ -1170,6 +1219,7 @@ function weaponForm(w) {
         cur.type = m.querySelector("[data-type]").value;
         cur.slots = readSlots(m, "slot");
         cur.note = m.querySelector("[data-note]").value;
+        if (!okToSave("weapons", cur)) return;
         update((st) => {
           const i = st.weapons.findIndex((x) => x.id === cur.id);
           if (i >= 0) st.weapons[i] = cur; else st.weapons.push(cur);
@@ -1246,84 +1296,197 @@ function decoView() {
       ${isW() ? `<div class="seg" style="margin-top:6px" data-deco-type>${[["", "すべて"], ["W", "武器用"], ["A", "防具用"]].map(([k, l]) => `<button data-dt="${k}" class="${(st.ui.decoType || "") === k ? "on" : ""}">${l}</button>`).join("")}</div>` : ""}
       ${sortBar("deco", [["skill", "スキル名"], ["name", "名前"], ["size", "スロットLv"], ["lv", "スキルLv"], ["count", "所持数"], ...(isW() ? [["type", "種別（武器/防具）"]] : [])], "skill", "asc")}
       <div class="row"><button class="btn sm" data-act="deco-unlimited">全て無制限</button><button class="btn sm" data-act="deco-zero">表示中を0個に</button></div>
+      <p class="muted small" style="margin:6px 0 0">所持数: 空欄（∞）＝無制限</p>
     </div>
     <div class="list cols" style="margin-top:10px" id="deco-list">${arr.map((d) => {
       const c = st.decoCount[d.name];
       return `<div class="item" data-dn="${esc(d.name)}"><div class="ttl">${slotTag(d.size, d.type)}<span class="grow">${esc(d.name)}</span>
-        <input type="number" min="0" inputmode="numeric" data-act="deco-count" value="${c == null ? "" : c}" placeholder="∞" style="width:72px"></div>
+        <input type="number" min="0" inputmode="numeric" data-act="deco-count" value="${c == null ? "" : c}" placeholder="∞" aria-label="${esc(d.name)}の所持数（空欄で無制限）" style="width:72px"></div>
         <div class="meta">${isW() ? `<span class="tag">${d.type === "W" ? "武器用" : "防具用"}</span>` : ""}${Object.entries(d.skills).map(([k, v]) => `${esc(k)} +${v}`).join(" ／ ")}</div></div>`;
     }).join("")}</div>`;
+}
+
+// ---- 名前のあいまい解決（インポート用） ----
+// 完全一致、または候補が1件に決まるときだけ自動で決める（resolveByScore は search.js）。候補が複数・0件のときはユーザーに選び直してもらう
+function resolveSkill(text, filter) {
+  const q = String(text || "").trim();
+  if (!norm(q)) return { pick: null, count: 0 };
+  if (SKILL[q] && (!filter || filter(SKILL[q]))) return { pick: q, count: 1 };
+  // 「汎用錬成スキル」（c3 など内部用）は完全一致のときだけ使い、あいまいな候補には出さない
+  const pool = M.skills.filter((x) => x.cat !== "汎用錬成スキル" && (!filter || filter(x)));
+  const r = resolveByScore(pool, q, (x) => Math.min(score(x.name, q), ...(x.names || []).map((n) => score(n, q))));
+  return { pick: r.pick ? r.pick.name : null, count: r.count };
+}
+function resolveArmor(text) {
+  const q = String(text || "").trim();
+  const n = norm(q);
+  if (!n) return { pick: null, count: 0 };
+  const exact = M.armors.filter((a) => norm(a.name) === n && sexOk(a));
+  if (exact.length === 1) return { pick: exact[0].id, count: 1 };
+  const r = resolveByScore(M.armors.filter(sexOk), q, (a) => score(a.name, q));
+  return { pick: r.pick ? r.pick.id : null, count: r.count };
+}
+// ワイルズの光るお守りに付くスキル（登録画面の選択肢と同じ条件）
+const charmSkillFilter = () => (isW() && M.charmSkillMax ? (x) => M.charmSkillMax[x.name] != null || x.kind === "A" || x.kind === "W" : null);
+
+// ---- 重複チェック: メモなどを除いた「中身」が同じものを重複とみなす ----
+const descJoin = (a) => (a || []).filter((v) => v > 0).slice().sort((x, y) => y - x).join(".");
+const DUP_SIG = {
+  qurious: (q) => [q.base, descJoin(q.slots), Object.entries(q.delta || {}).filter(([, v]) => v).map(([k, v]) => k + ":" + v).sort().join("|"), q.defDelta || 0, (q.resDelta || []).map((v) => v || 0).join(".")].join("/"),
+  charms: (c) => [(c.skills || []).filter((x) => x[0]).map(([k, v]) => k + ":" + v).sort().join("|"), descJoin(c.slots), descJoin(c.wslots)].join("/"),
+  artians: (a) => [a.type, Object.keys(a.skills || {}).sort().join("|"), descJoin(a.wslots)].join("/"),
+  weapons: (w) => [w.name, w.type, descJoin(w.slots)].join("/"),
+  mysets: (x) => (x.pieces || []).map((p) => [p.part, p.name, p.note, (p.decos || []).map((d) => d.deco || "-").join(".")].join(":")).join("/"),
+};
+const DUP_LABEL = { qurious: "傀異錬成防具", artians: "アーティア武器", weapons: "武器", mysets: "マイセット" };
+function findDup(kind, rec, list = S()[kind]) {
+  const sig = DUP_SIG[kind](rec);
+  return list.find((x) => x.id !== rec.id && DUP_SIG[kind](x) === sig) || null;
+}
+// 保存前の確認。重複がなければ true。重複があれば確認し、保存してよければ true
+function okToSave(kind, rec) {
+  if (!findDup(kind, rec)) return true;
+  const label = DUP_LABEL[kind] || (isW() ? "光るお守り" : "護石");
+  return confirm(`同じ内容の${label}が既に登録されています。それでも保存しますか？`);
 }
 
 // ---- インポート（泣きシミュ等のCSV形式） ----
 function parseCSVLines(text) {
   return text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("#")).map((l) => l.split(/[,\t]/).map((x) => x.trim()));
 }
-function findArmorByName(name) {
-  const n = norm(name);
-  return M.armors.find((a) => norm(a.name) === n);
-}
 function importDialog(kind) {
   const isQ = kind === "q";
   const w = isW();
+  const listKey = isQ ? "qurious" : "charms";
+  const sf = isQ ? null : charmSkillFilter();
   const help = isQ
     ? "<code>ベース防具名,防御力増減,火,水,雷,氷,龍,スロット1増加,スロット2増加,スロット3増加,スキル名,増減,スキル名,増減,…</code>"
     : w ? "<code>スキル1,Lv,スキル2,Lv,スキル3,Lv,武器スロ1,武器スロ2,武器スロ3,防具スロ1,防具スロ2,防具スロ3</code>"
       : "<code>スキル1,Lv,スキル2,Lv,スロット1,スロット2,スロット3</code>";
   const ph = isQ ? "ゴアヘルムＳ,0,0,0,0,0,0,1,0,0,攻撃,1" : w ? "攻撃,1,弱点特効,1,,,1,0,0,2,0,0" : "攻撃,2,見切り,1,2,1,0";
+  // ユーザーが選び直した名前（入力された文字 → 正式名 / 防具ID）。同じ入力は1回選べば全行に使う
+  const fixSkill = new Map(), fixArmor = new Map();
+  let reviewed = false; // 確認画面を一度出したか
+  const skillOf = (raw) => fixSkill.get(raw) || resolveSkill(raw, sf).pick;
+  const armorOf = (raw) => fixArmor.get(raw) || resolveArmor(raw).pick;
+
+  // 1行を登録データにする。名前が決まらないときは unresolved に入れて null を返す
+  const build = (cols, unresolved) => {
+    const n = (i) => +(cols[i] || 0) || 0;
+    let ok = true;
+    const needSkill = (raw) => { const nm = skillOf(raw); if (!nm) { unresolved.push(["skill", raw]); ok = false; } return nm; };
+    if (isQ) {
+      const aid = armorOf(cols[0]);
+      if (!aid) { unresolved.push(["armor", cols[0] || ""]); ok = false; }
+      const delta = {};
+      for (let i = 10; i + 1 < cols.length; i += 2) {
+        if (!cols[i]) continue;
+        const nm = needSkill(cols[i]);
+        if (nm) delta[nm] = (delta[nm] || 0) + n(i + 1);
+      }
+      if (!ok) return null;
+      const a = ARMOR[aid];
+      const base = a.slots.slice().sort((x, y) => y - x);
+      const slots = [0, 1, 2].map((i) => Math.min(4, (base[i] || 0) + n(7 + i))).filter((v) => v > 0);
+      return { id: uid(), base: a.id, slots, delta, defDelta: n(1), resDelta: [n(2), n(3), n(4), n(5), n(6)], note: "", enabled: true };
+    }
+    const skills = [];
+    const nsk = w ? 3 : 2;
+    for (let j = 0; j < nsk; j++) {
+      const raw = cols[j * 2];
+      if (!raw) continue;
+      const nm = needSkill(raw);
+      if (nm) skills.push([nm, +cols[j * 2 + 1] || 1]);
+    }
+    if (!ok) return null;
+    const o = nsk * 2;
+    const desc = (a) => a.filter((v) => v > 0).sort((x, y) => y - x);
+    const rec = w
+      ? { wslots: desc([n(o), n(o + 1), n(o + 2)]), slots: desc([n(o + 3), n(o + 4), n(o + 5)]) }
+      : { slots: desc([n(o), n(o + 1), n(o + 2)]), wslots: [] };
+    return { id: uid(), skills, ...rec, note: "", enabled: true };
+  };
+
   openModal({
     title: isQ ? "傀異錬成防具のインポート" : w ? "光るお守りのインポート" : "護石のインポート",
     body: `<p class="muted small">1行1件: ${help}</p>
       <textarea data-text placeholder="${esc(ph)}"></textarea>
-      <div data-msg class="muted small"></div>`,
+      <div data-review></div>`,
     foot: '<button class="btn" data-close>キャンセル</button><button class="btn primary" data-go>取り込む</button>',
     onMount(m, close) {
-      m.querySelector("[data-go]").addEventListener("click", () => {
-        const lines = parseCSVLines(m.querySelector("[data-text]").value);
-        const ok = [], ng = [];
-        for (const cols of lines) {
-          try {
-            const n = (i) => +(cols[i] || 0) || 0;
-            if (isQ) {
-              const a = findArmorByName(cols[0]);
-              if (!a) throw new Error("防具が見つかりません: " + cols[0]);
-              const base = a.slots.slice().sort((x, y) => y - x);
-              const slots = [0, 1, 2].map((i) => Math.min(4, (base[i] || 0) + n(7 + i))).filter((s) => s > 0);
-              const delta = {};
-              for (let i = 10; i + 1 < cols.length; i += 2) {
-                if (!cols[i]) continue;
-                if (!SKILL[cols[i]]) throw new Error("スキル名が不明: " + cols[i]);
-                delta[cols[i]] = (delta[cols[i]] || 0) + n(i + 1);
-              }
-              ok.push({ id: uid(), base: a.id, slots, delta, defDelta: n(1), resDelta: [n(2), n(3), n(4), n(5), n(6)], note: "", enabled: true, createdAt: Date.now() + ok.length });
-            } else {
-              const skills = [];
-              const nsk = w ? 3 : 2;
-              for (let j = 0; j < nsk; j++) {
-                const s = cols[j * 2];
-                if (!s) continue;
-                if (!SKILL[s]) throw new Error("スキル名が不明: " + s);
-                skills.push([s, +cols[j * 2 + 1] || 1]);
-              }
-              const o = nsk * 2;
-              const desc = (a) => a.filter((s) => s > 0).sort((x, y) => y - x);
-              const rec = w
-                ? { wslots: desc([n(o), n(o + 1), n(o + 2)]), slots: desc([n(o + 3), n(o + 4), n(o + 5)]) }
-                : { slots: desc([n(o), n(o + 1), n(o + 2)]), wslots: [] };
-              ok.push({ id: uid(), skills, ...rec, note: "", enabled: true, createdAt: Date.now() + ok.length });
-            }
-          } catch (e) {
-            ng.push(cols.join(",") + " → " + e.message);
+      const review = m.querySelector("[data-review]");
+      const goBtn = m.querySelector("[data-go]");
+      const ta = m.querySelector("[data-text]");
+      ta.addEventListener("input", () => { reviewed = false; review.innerHTML = ""; goBtn.textContent = "取り込む"; });
+
+      // 全行を解析: 取り込める行・名前待ちの行・重複（登録済み、または貼り付けた中で同じ内容）
+      const analyze = () => {
+        const recs = [], pending = [], need = new Map(), dups = [], batch = [];
+        const existing = S()[listKey];
+        for (const cols of parseCSVLines(ta.value)) {
+          const un = [];
+          const rec = build(cols, un);
+          if (!rec) {
+            pending.push(cols);
+            for (const [k, raw] of un) need.set(k + "\u0000" + raw, [k, raw]);
+            continue;
           }
+          const dup = !!(findDup(listKey, rec, existing) || findDup(listKey, rec, batch));
+          batch.push(rec);
+          recs.push({ rec, dup });
+          if (dup) dups.push(cols);
         }
-        if (ok.length) update((st) => { (isQ ? st.qurious : st.charms).push(...ok); });
-        rerender();
-        if (ng.length) {
-          m.querySelector("[data-msg]").innerHTML = `${ok.length}件取り込みました。<br>取り込めなかった行（${ng.length}件）:<br>` + ng.map(esc).join("<br>");
+        return { recs, pending, need: [...need.values()], dups };
+      };
+
+      const renderReview = (a) => {
+        const keep = review.querySelector("[data-dup-ok]")?.checked;
+        let h = "";
+        if (a.need.length) {
+          h += `<div class="fsec" style="margin-top:10px"><h4>名前を選び直す（${a.need.length}件）</h4>` + a.need.map(([k, raw]) => {
+            const r = k === "skill" ? resolveSkill(raw, sf) : resolveArmor(raw);
+            return `<div class="skill-row"><span class="nm">「${esc(raw)}」<span class="muted small"> ${k === "armor" ? "防具 " : ""}${r.count ? `候補${r.count}件` : "該当なし"}</span></span>
+              <span></span><button class="btn sm" data-fix="${k}" data-raw="${esc(raw)}">選ぶ</button></div>`;
+          }).join("") + "</div>";
+        }
+        const fixed = [...[...fixSkill], ...[...fixArmor].map(([raw, id]) => [raw, ARMOR[id]?.name || id])];
+        if (fixed.length) h += `<p class="muted small" style="margin:8px 0 0">選んだ名前: ${fixed.map(([raw, nm]) => `${esc(raw)}→${esc(nm)}`).join("、")}</p>`;
+        if (a.dups.length) {
+          h += `<div class="fsec" style="margin-top:10px"><h4>登録済みと同じ内容（${a.dups.length}件）</h4>
+            <p class="muted small" style="margin:0 0 4px">${a.dups.map((c) => esc(c.join(","))).join("<br>")}</p>
+            <label class="inline small"><input type="checkbox" class="mini-switch" data-dup-ok ${keep ? "checked" : ""}> 重複も取り込む</label></div>`;
+        }
+        review.innerHTML = h;
+        goBtn.textContent = a.need.length || a.dups.length ? "この内容で取り込む" : "取り込む";
+      };
+
+      review.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-fix]");
+        if (!b) return;
+        const raw = b.dataset.raw;
+        const after = () => renderReview(analyze());
+        if (b.dataset.fix === "skill") {
+          pickSkill({ title: `「${raw}」のスキルを選択`, query: raw, filter: sf, onPick(nm) { fixSkill.set(raw, nm); after(); } });
         } else {
-          close();
-          toast(`${ok.length}件取り込みました`);
+          // 候補の多い部位を最初に開く
+          const hit = M.armors.filter(sexOk).find((x) => score(x.name, raw) < 9);
+          pickArmor({ query: raw, part: hit?.part || "head", onPick(a) { fixArmor.set(raw, a.id); after(); } });
         }
+      });
+
+      goBtn.addEventListener("click", () => {
+        const a = analyze();
+        if (!a.recs.length && !a.pending.length) { toast("取り込む行がありません"); return; }
+        // 名前が決まらない行や重複があれば、まず確認画面を出す（あいまいなまま取り込まない）
+        if (!reviewed && (a.need.length || a.dups.length)) { reviewed = true; renderReview(a); return; }
+        if (a.need.length && !confirm(`名前が決まっていない行（${a.pending.length}行）は取り込みません。よろしいですか？`)) { renderReview(a); return; }
+        const dupOk = review.querySelector("[data-dup-ok]")?.checked;
+        const take = a.recs.filter((x) => dupOk || !x.dup).map((x, i) => ({ ...x.rec, createdAt: Date.now() + i }));
+        if (take.length) update((st) => { st[listKey].push(...take); });
+        rerender();
+        const skipped = a.recs.length - take.length;
+        toast(`${take.length}件取り込みました${skipped ? `（重複${skipped}件は除外）` : ""}${a.pending.length ? `（未取り込み${a.pending.length}行）` : ""}`);
+        close();
       });
     },
   });
@@ -1473,7 +1636,7 @@ function helpBody(key) {
         <li>スキルの色: <span class="chip ok">緑</span> 条件を達成、<span class="chip ng">赤</span> 未達（希望スキル）。</li>
         ${w ? "<li>シリーズ／グループスキルは「4pt→力自慢Ⅱ」のようにポイントと発動スキルを表示します。</li>" : ""}
         <li><b>同等+N</b>: 条件スキルとスロットが同じ装備が他にN件あります。押すと一覧を表示します。</li>
-        <li><b>⭐保存</b>: マイセットに保存します。</li>
+        <li><b>${ICON_STAR}保存</b>: マイセットに保存します。同じ組み合わせが保存済みなら確認します。</li>
       </ul>
       <h3>並び替え・絞り込み</h3>
       <ul>
@@ -1497,9 +1660,12 @@ function helpBody(key) {
       </ul>`;
     case "qurious": return `
       <ul>
-        <li><b>＋登録</b>: ベース防具を選ぶと、そのスロット・スキル・防御・耐性が入った状態で始まります。ゲーム画面に表示される<b>錬成後の値</b>に書き換えてください。</li>
+        <li><b>＋登録</b>: ベース防具を選ぶと、そのスロット・スキル・防御・耐性が入った状態で始まります。スロット・スキルは<b>錬成後の値</b>に書き換えてください。</li>
+        <li><b>防御・耐性の増減</b>: ゲーム画面に表示される増減（例: 防御+12、火-2）をそのまま選びます。下の「計」に合計値が出ます。</li>
         <li><b>スキル</b>: Lvを変える／<b>✕</b>で外す（錬成で消えたスキル）／<b>＋スキル追加</b>で追加します。</li>
         <li><b>インポート</b>: 泣きシミュ形式のCSVを貼り付けて一括登録します。<br><code>ベース防具名,防御,火,水,雷,氷,龍,スロ1増,スロ2増,スロ3増,スキル,増減,…</code></li>
+        <li>インポートの防具名・スキル名は、一部や読みでも構いません（例: 弱特、こうげき）。1つに決まらない名前は、取り込む前に<b>選ぶ</b>で選び直します。</li>
+        <li><b>重複</b>: 登録済みと同じ内容（メモ以外が同じ）は取り込みません。<b>重複も取り込む</b>をONにすると取り込みます。手で登録するときも、同じ内容があれば確認します。</li>
         <li><b>検索対象</b>: OFFにすると検索に使いません。</li>
         <li><b>複製</b>: 似た錬成結果をコピーして登録できます。</li>
       </ul>`;
@@ -1516,12 +1682,16 @@ function helpBody(key) {
         <li>鑑定で入手したランダムスキルの護石を登録します。</li>
         <li><b>＋登録</b>: スキルを3つまで、スロットは「武器用／防具用」を選んで入力します。「続けて登録」で連続入力できます。</li>
         <li><b>インポート</b>: 泣きシミュ形式のCSVを貼り付けて一括登録します。<br><code>スキル1,Lv,スキル2,Lv,スキル3,Lv,武器スロ1,武器スロ2,武器スロ3,防具スロ1,防具スロ2,防具スロ3</code></li>
+        <li>インポートのスキル名は、一部や読みでも構いません（例: 弱特、こうげき）。1つに決まらない名前は、取り込む前に<b>選ぶ</b>で選び直します。</li>
+        <li><b>重複</b>: 登録済みと同じ内容（メモ以外が同じ）は取り込みません。<b>重複も取り込む</b>をONにすると取り込みます。手で登録するときも、同じ内容があれば確認します。</li>
       </ul>
       <h3>固定護石</h3>
       <ul><li><b>所持</b>: 持っている護石に付けます。「未所持の装備も使う」がOFFのときは所持した固定護石だけが候補です。</li></ul>` : `
       <ul>
         <li><b>＋登録</b>: スキル2つとスロットを入力します。「続けて登録」で連続入力できます。</li>
         <li><b>インポート</b>: 泣きシミュ形式のCSVを貼り付けて一括登録します。<br><code>スキル1,Lv,スキル2,Lv,スロ1,スロ2,スロ3</code></li>
+        <li>インポートのスキル名は、一部や読みでも構いません（例: 弱特、こうげき）。1つに決まらない名前は、取り込む前に<b>選ぶ</b>で選び直します。</li>
+        <li><b>重複</b>: 登録済みと同じ内容（メモ以外が同じ）は取り込みません。<b>重複も取り込む</b>をONにすると取り込みます。手で登録するときも、同じ内容があれば確認します。</li>
         <li><b>検索対象</b>: OFFにすると検索に使いません。護石が1つもなければ「護石なし」で検索します。</li>
       </ul>`;
     case "weapon": return w ? `
@@ -1545,7 +1715,7 @@ function helpBody(key) {
       </ul>`;
     case "mysets": return `
       <ul>
-        <li>結果タブの<b>⭐保存</b>で追加されます。保存時の装備名・登録番号・スキル・装飾品が記録されます。</li>
+        <li>結果タブの<b>${ICON_STAR}保存</b>で追加されます。保存時の装備名・登録番号・スキル・装飾品が記録されます。</li>
         <li><span class="tag warn">登録変更あり</span>: 保存後に、その登録装備のスキルやスロットを編集しました。<span class="tag warn">削除済み</span>: その登録装備を削除しました。</li>
         <li>メモ欄に自由に名前を付けられます。並び替えもできます。</li>
       </ul>`;
@@ -1584,17 +1754,15 @@ function openHelp() {
   helpBack = { tab, scroll: window.scrollY };
   helpKey = tab === "equip" ? equipTab : tab;
   tab = "help";
-  document.querySelectorAll("#tabbar button").forEach((b) => b.classList.remove("on"));
-  document.getElementById("help-btn").classList.add("on");
+  markTabs("help");
   renderHelp();
   window.scrollTo(0, 0);
 }
 function closeHelp() {
   const back = helpBack || { tab: "search", scroll: 0 };
   helpBack = null;
-  document.getElementById("help-btn").classList.remove("on");
   tab = back.tab;
-  document.querySelectorAll("#tabbar button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  markTabs(tab);
   rerender();
   window.scrollTo(0, back.scroll);
 }
@@ -1603,11 +1771,25 @@ document.getElementById("help-btn").addEventListener("click", openHelp);
 // ======================================================================
 // ルーティング・イベント
 // ======================================================================
+// 下部タブの選択表示。見た目（on）に加え、読み上げ機能にも現在の画面を伝える（aria-current）
+function markTabs(t) {
+  document.querySelectorAll("#tabbar button").forEach((b) => {
+    const on = b.dataset.tab === t;
+    b.classList.toggle("on", on);
+    if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
+  const hb = document.getElementById("help-btn");
+  hb.classList.toggle("on", t === "help");
+  hb.setAttribute("aria-pressed", t === "help" ? "true" : "false");
+  // URL に画面名を反映（#results など）。ブックマークや共有でその画面を直接開ける。
+  // 履歴は積まない（replaceState）: ホーム画面アプリには戻るボタンがなく、戻る操作で画面が行き来すると混乱するため
+  if (TABS.includes(t) && location.hash !== "#" + t) history.replaceState(null, "", "#" + t);
+}
+const TABS = ["search", "results", "equip", "mysets", "settings"];
 function setTab(t) {
   tab = t;
   helpBack = null;
-  document.getElementById("help-btn").classList.remove("on");
-  document.querySelectorAll("#tabbar button").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
+  markTabs(t);
   rerender();
   window.scrollTo(0, 0);
 }
@@ -1786,7 +1968,9 @@ view.addEventListener("click", (e) => {
     }
     case "save-set": {
       const r = last.out.results[+el.dataset.i];
-      update((s) => { s.mysets.push(snapshot(r)); });
+      const snap = snapshot(r);
+      if (!okToSave("mysets", snap)) break;
+      update((s) => { s.mysets.push(snap); });
       toast("マイセットに保存しました");
       break;
     }
@@ -1955,6 +2139,9 @@ async function init() {
     view.innerHTML = `<div class="notice">データの読み込みに失敗しました: ${esc(e.message)}</div>`;
     return;
   }
+  const h = location.hash.slice(1);
+  if (TABS.includes(h)) tab = h; // URL の #画面名 から開く
+  markTabs(tab);
   rerender();
   if ("serviceWorker" in navigator && location.protocol === "https:") {
     navigator.serviceWorker.register("sw.js").catch(() => {});
