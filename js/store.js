@@ -29,6 +29,8 @@ export const defaultState = () => ({
   ui: {},
 });
 
+let normalizer = null; // 状態の整合（登録番号の付与など）をアプリ側から差し込む
+export function setNormalizer(fn) { normalizer = fn; if (fn) fn(state); }
 let game = readGame();
 let state = load();
 const listeners = new Set();
@@ -90,10 +92,12 @@ export function setGame(g) {
   game = g;
   try { localStorage.setItem(GAME_KEY, g); } catch (e) { /* noop */ }
   state = load();
+  if (normalizer) normalizer(state);
 }
 
 export function update(fn) {
   fn(state);
+  if (normalizer) normalizer(state);
   save();
 }
 
@@ -112,6 +116,7 @@ export function importJSON(text) {
   const g = obj && obj.app === "mhrsb-sim" ? obj.game || "sb" : game;
   if (g !== game) throw new Error(`このバックアップは「${g === "wilds" ? "ワイルズ" : "サンブレイク"}」のデータです。設定でゲームタイトルを切り替えてから復元してください`);
   state = merge(defaultState(), data);
+  if (normalizer) normalizer(state);
   save();
 }
 

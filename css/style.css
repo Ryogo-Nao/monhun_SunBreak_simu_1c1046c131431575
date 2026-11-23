@@ -308,3 +308,10 @@ select { text-overflow: ellipsis; }
 :root.kb-open .modal { max-height: calc(var(--vv-h, 100dvh) - 8px); border-radius: 16px 16px 0 0; padding-bottom: 0; }
 :root.kb-open .tabbar, :root.kb-open .runbar { display: none; }
 :root.kb-open body { padding-bottom: 0; }
+
+/* 結果・マイセットの部位行: 装備名＋登録番号＋メモ / その装備のスキル / 装飾品 */
+.pname { font-weight: 600; }
+.regno { display: inline-block; font-size: 11px; font-weight: 700; padding: 0 5px; border-radius: 4px; background: var(--chip); color: var(--ink2); vertical-align: 1px; }
+.pnote { font-size: 12px; font-weight: 400; color: var(--ink2); }
+.pskills { font-size: 12px; color: var(--ink); opacity: .85; margin-top: 1px; }
+.tag.warn { background: var(--ng-soft); color: var(--ng); }

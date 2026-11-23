@@ -1,4 +1,4 @@
-import { getState, getGame, setGame, update, save, exportJSON, importJSON, resetAll, uid } from "./store.js";
+import { getState, getGame, setGame, update, save, exportJSON, importJSON, resetAll, uid, setNormalizer } from "./store.js";
 import { norm, match, matchAny, score } from "./search.js";
 
 // ======================================================================
@@ -137,6 +137,43 @@ function sortBar(id, options, defKey, defDir) {
   </div>`;
 }
 
+// ---- 登録番号: 登録した装備（傀異錬成・護石・アーティア・登録武器）を画面間で特定するための番号 ----
+const REG_LISTS = ["qurious", "charms", "artians", "weapons"];
+function ensureRegNos(st) {
+  for (const key of REG_LISTS) {
+    const list = st[key] || [];
+    const seen = new Set();
+    const order = list.map((x, i) => [x, i]).sort((a, b) => (a[0].createdAt || 0) - (b[0].createdAt || 0) || a[1] - b[1]).map((x) => x[0]);
+    const todo = [];
+    for (const x of order) {
+      if (Number.isInteger(x.no) && x.no > 0 && !seen.has(x.no)) seen.add(x.no); // 複製などで重複した番号は振り直す
+      else todo.push(x);
+    }
+    // 削除された番号も再利用しない（保存済みマイセットとの対応が崩れないように）
+    st.regSeq = st.regSeq || {};
+    let next = Math.max(0, ...seen, st.regSeq[key] || 0) + 1;
+    for (const x of todo) x.no = next++;
+    st.regSeq[key] = Math.max(st.regSeq[key] || 0, next - 1);
+  }
+}
+setNormalizer(ensureRegNos);
+const regNoHTML = (no) => (no ? ` <span class="regno">No.${no}</span>` : "");
+// 装備1つ分のスキルを短く表記（例: 攻撃Lv3・見切りLv1 / シリーズは +pt）
+function skillText(skills) {
+  const ent = Object.entries(skills || {}).filter(([, v]) => v > 0);
+  if (!ent.length) return "";
+  return ent.map(([k, v]) => `${esc(k)}${thr(k) ? "+" + v : "Lv" + v}`).join("・");
+}
+// 結果・マイセット共通: 部位1行（装備名＋登録番号＋メモ、その装備のスキル、装着する装飾品）
+function pieceRowHTML({ part, tag = "", name, no, note, skills, decos, extra = "" }) {
+  const decoTxt = (decos || []).map((d) => d.deco ? `${slotTag(d.size, d.type)}${esc(d.deco)}` : `${slotTag(d.size, d.type, true)}空き`).join(" ");
+  const st = skillText(skills);
+  return `<tr><td class="p">${PART_LABEL[part]}</td><td class="n">
+    <div class="pname">${tag}${esc(name)}${regNoHTML(no)}${note ? ` <span class="pnote">${esc(note)}</span>` : ""} ${extra}</div>
+    ${st ? `<div class="pskills">${st}</div>` : ""}
+    ${decoTxt ? `<div class="decos">${decoTxt}</div>` : ""}</td></tr>`;
+}
+
 // ---- 装備アイテム化 ----
 function quriousItem(q) {
   const base = ARMOR[q.base];
@@ -147,7 +184,7 @@ function quriousItem(q) {
     if (skills[k] <= 0) delete skills[k];
   }
   return {
-    key: "q:" + q.id, q, base, part: base.part, name: base.name, note: q.note || "",
+    key: "q:" + q.id, q, base, part: base.part, name: base.name, note: q.note || "", no: q.no,
     slots: (q.slots || []).filter((s) => s > 0).sort((a, b) => b - a),
     skills, def: base.def + (q.defDelta || 0),
     res: base.res.map((v, i) => v + ((q.resDelta || [])[i] || 0)),
@@ -159,20 +196,20 @@ function charmItem(c) {
   for (const [k, v] of c.skills || []) if (k && v) skills[k] = (skills[k] || 0) + v;
   const label = isW() ? "光るお守り" : "護石";
   return {
-    key: "c:" + c.id, c, name: label + (c.note ? "（" + c.note + "）" : ""), note: c.note || "",
+    key: "c:" + c.id, c, name: label, note: c.note || "", no: c.no,
     slots: (c.slots || []).filter((s) => s > 0).sort((a, b) => b - a),
     wslots: (c.wslots || []).filter((s) => s > 0).sort((a, b) => b - a),
     skills, def: 0, res: [0, 0, 0, 0, 0],
   };
 }
 function weaponItem(w) { // SB 登録武器
-  return { key: "w:" + w.id, w, name: w.name || "武器", slots: (w.slots || []).filter((s) => s > 0).sort((a, b) => b - a), skills: {}, def: 0, res: [0, 0, 0, 0, 0] };
+  return { key: "w:" + w.id, w, no: w.no, note: w.note || "", name: w.name || "武器", slots: (w.slots || []).filter((s) => s > 0).sort((a, b) => b - a), skills: {}, def: 0, res: [0, 0, 0, 0, 0] };
 }
 function wildsWeaponItem(w) {
   return { key: w.id, name: w.name, type: w.type, wslots: w.slots, slots: [], skills: w.skills, def: w.def || 0, res: [0, 0, 0, 0, 0], attack: w.attack, pref: S().ownedWeapons[w.id] ? 1 : 0 };
 }
 function artianItem(a) {
-  return { key: "ar:" + a.id, a, name: a.name || `アーティア（${a.type}）`, type: a.type, note: a.note || "", wslots: (a.wslots || [3, 3, 3]).filter((s) => s > 0).sort((x, y) => y - x), slots: [], skills: { ...(a.skills || {}) }, def: 0, res: [0, 0, 0, 0, 0], pref: 2 };
+  return { key: "ar:" + a.id, a, no: a.no, name: a.name || `アーティア（${a.type}）`, type: a.type, note: a.note || "", wslots: (a.wslots || [3, 3, 3]).filter((s) => s > 0).sort((x, y) => y - x), slots: [], skills: { ...(a.skills || {}) }, def: 0, res: [0, 0, 0, 0, 0], pref: 2 };
 }
 function fixedCharmItem(c) {
   return { key: c.id, name: c.name, slots: [], wslots: [], skills: c.skills, def: 0, res: [0, 0, 0, 0, 0], pref: S().ownedCharms[c.id] ? 1 : 0 };
@@ -397,7 +434,7 @@ function sbWeaponSection() {
       <div class="field"><select data-act="weapon-sel" aria-label="武器">
         <option value="manual" ${o.weapon === "manual" ? "selected" : ""}>スロット指定</option>
         ${weapons.length ? `<option value="all" ${o.weapon === "all" ? "selected" : ""}>登録武器すべて（${weapons.filter((w) => w.enabled !== false).length}）</option>` : ""}
-        ${weapons.map((w) => `<option value="${w.id}" ${o.weapon === w.id ? "selected" : ""}>${esc(w.name)}（${(w.slots || []).join("-") || "スロなし"}）</option>`).join("")}
+        ${weapons.map((w) => `<option value="${w.id}" ${o.weapon === w.id ? "selected" : ""}>No.${w.no} ${esc(w.name)}（${(w.slots || []).join("-") || "スロなし"}）</option>`).join("")}
       </select></div>
       <div class="${o.weapon === "manual" ? "" : "hide"}">${fld("スロット", slotSelects(o.weaponSlots, "wslot"))}</div>
     </div>`;
@@ -419,7 +456,7 @@ function wildsWeaponSection() {
       <div class="field"><div class="field-lbl">武器</div><select data-act="weapon-sel">
         ${opt("type", `${type}すべて（${(o.includeUnowned ? all.length : owned.length) + (o.includeQurious ? arts.filter((a) => a.enabled !== false).length : 0)}）`)}
         ${opt("manual", "スロット指定")}
-        ${arts.length ? `<optgroup label="アーティア">${arts.map((a) => opt("ar:" + a.id, artianItem(a).name + "（" + Object.keys(a.skills || {}).join("・") + "）")).join("")}</optgroup>` : ""}
+        ${arts.length ? `<optgroup label="アーティア">${arts.map((a) => opt("ar:" + a.id, `No.${a.no} ${artianItem(a).name}（${Object.keys(a.skills || {}).join("・") || "スキルなし"}）`)).join("")}</optgroup>` : ""}
         ${owned.length ? `<optgroup label="所持武器">${owned.map((w) => opt(w.id, wlabel(w))).join("")}</optgroup>` : ""}
         <optgroup label="すべての武器">${all.map((w) => opt(w.id, wlabel(w))).join("")}</optgroup>
       </select></div>
@@ -615,7 +652,7 @@ function renderResults() {
   const st = sortState("results", "priority", "asc");
   const filter = S().ui.resFilter || "";
   let list = out.results;
-  if (filter) list = list.filter((r) => matchAny([...r.pieces.flatMap((p) => p.items.map((k) => last.keyMap[k]?.name)), ...Object.keys(r.skills)], filter));
+  if (filter) list = list.filter((r) => matchAny([...r.pieces.flatMap((p) => p.items.flatMap((k) => { const it = last.keyMap[k]; return it ? [it.name, it.note, it.no ? "No." + it.no : ""] : []; })), ...Object.keys(r.skills)], filter));
   list = sorted(list, st.key, st.dir, resultKeyFns());
   const shown = list.slice(0, resultShown);
   view.innerHTML = `
@@ -640,20 +677,18 @@ function itemTag(it) {
   return isOwnedItem(it) && it.kind !== "charm" ? '<span class="tag own">所持</span> ' : "";
 }
 function itemName(it) {
-  if (!it) return "（なし）";
-  return it.name + ((it.kind === "qurious" || it.kind === "artian") && it.note ? `（${it.note}）` : "");
+  return it ? it.name : "（なし）";
 }
 
 function resultCard(r, targets) {
   const km = last.keyMap;
   const rows = r.pieces.map((p, pi) => {
     const main = km[p.items[0]];
-    const decos = r.decos.filter((d) => d.piece === pi);
-    const decoTxt = decos.map((d) => d.deco ? `${slotTag(d.size, d.type)}${esc(d.deco)}` : `${slotTag(d.size, d.type, true)}空き`).join(" ");
     const alts = p.items.length > 1 ? `<button class="alt" data-act="alts" data-k="${esc(p.items.join("\n"))}">同等+${p.items.length - 1}</button>` : "";
-    const wskills = p.part === "weapon" && main && Object.keys(main.skills || {}).length ? `<div class="decos">${Object.entries(main.skills).map(([k, v]) => esc(k) + v).join(" ")}</div>` : "";
-    return `<tr><td class="p">${PART_LABEL[p.part]}</td><td class="n">${itemTag(main)}${esc(itemName(main))} ${alts}${wskills}
-      ${decos.length ? `<div class="decos">${decoTxt}</div>` : ""}</td></tr>`;
+    return pieceRowHTML({
+      part: p.part, tag: itemTag(main), name: itemName(main), no: main?.no, note: main?.note,
+      skills: main?.skills, decos: r.decos.filter((d) => d.piece === pi), extra: alts,
+    });
   }).join("");
   const skills = Object.fromEntries(Object.entries(r.skills).sort((a, b) => (targets[b[0]] != null) - (targets[a[0]] != null) || b[1] - a[1]));
   return `<div class="item">
@@ -674,13 +709,21 @@ function snapshot(r) {
     savedAt: Date.now(),
     conds: last.conds,
     targets: last.targets,
-    pieces: r.pieces.map((p, pi) => ({
-      part: p.part,
-      name: km[p.items[0]]?.name || "（なし）",
-      kind: km[p.items[0]]?.kind,
-      note: km[p.items[0]]?.note || "",
-      decos: r.decos.filter((d) => d.piece === pi).map((d) => ({ size: d.size, type: d.type, deco: d.deco })),
-    })),
+    pieces: r.pieces.map((p, pi) => {
+      const it = km[p.items[0]];
+      return {
+        part: p.part,
+        key: it?.key || "",
+        name: it?.name || "（なし）",
+        kind: it?.kind,
+        no: it?.no,
+        note: it?.note || "",
+        skills: { ...(it?.skills || {}) },
+        slots: (it?.slots || []).slice(),
+        wslots: (it?.wslots || []).slice(),
+        decos: r.decos.filter((d) => d.piece === pi).map((d) => ({ size: d.size, type: d.type, deco: d.deco })),
+      };
+    }),
     skills: r.skills, def: r.def, res: r.res, free: r.free, freeW: r.freeW, freeCount: r.freeCount, freeCap: r.freeCap, memo: "",
   };
 }
@@ -786,7 +829,7 @@ function quriousView() {
     </div>
     <div class="list cols" style="margin-top:10px">${arr.map((x) => {
       return `<div class="item ${x.q.enabled === false ? "off" : ""}" data-qid="${x.q.id}">
-        <div class="ttl"><span class="tag part">${PART_LABEL[x.part]}</span><span class="grow">${esc(x.name)}${x.note ? ` <span class="muted small">${esc(x.note)}</span>` : ""}</span>${slotsHTML(x.slots, { pad: true })}</div>
+        <div class="ttl"><span class="tag part">${PART_LABEL[x.part]}</span><span class="grow">${esc(x.name)}${regNoHTML(x.no)}${x.note ? ` <span class="pnote">${esc(x.note)}</span>` : ""}</span>${slotsHTML(x.slots, { pad: true })}</div>
         <div class="meta"><span>防御${x.def}</span><span>${RES_LABEL.map((l, i) => l + x.res[i]).join(" ")}</span></div>
         <div class="chips">${skillChips(x.skills)}</div>
         <div class="acts">
@@ -888,7 +931,7 @@ function quriousForm(q, base, asCopy = false) {
           if (d) delta[k] = d;
         }
         const rec = {
-          id, base: b.id, slots: cur.slots, delta, defDelta: cur.def - b.def,
+          id, no: asCopy ? undefined : src?.no, base: b.id, slots: cur.slots, delta, defDelta: cur.def - b.def,
           resDelta: cur.res.map((v, i) => v - b.res[i]), note: cur.note, enabled, createdAt,
         };
         update((st) => {
@@ -923,7 +966,7 @@ function artianView() {
       ${sortBar("artian", [["added", "登録順"], ["type", "武器種"], ["name", "名前"], ["slotSum", "スロット合計Lv"]], "added", "desc")}
     </div>
     <div class="list cols" style="margin-top:10px">${arr.map((x) => `<div class="item ${x.a.enabled === false ? "off" : ""}" data-arid="${x.a.id}">
-        <div class="ttl"><span class="tag part">${esc(x.type)}</span><span class="grow">${esc(x.name)}${x.note ? ` <span class="muted small">${esc(x.note)}</span>` : ""}</span>${slotsHTML([], { wslots: x.wslots })}</div>
+        <div class="ttl"><span class="tag part">${esc(x.type)}</span><span class="grow">${esc(x.name)}${regNoHTML(x.no)}${x.note ? ` <span class="pnote">${esc(x.note)}</span>` : ""}</span>${slotsHTML([], { wslots: x.wslots })}</div>
         <div class="chips">${skillChips(x.skills)}</div>
         <div class="acts"><label class="inline"><input type="checkbox" class="mini-switch" data-act="ar-enable" ${x.a.enabled !== false ? "checked" : ""}>検索対象</label>
           <span class="right"></span><button class="btn sm" data-act="ar-copy">複製</button><button class="btn sm" data-act="ar-edit">編集</button><button class="btn sm danger" data-act="ar-del">削除</button></div></div>`).join("") || '<p class="muted">未登録</p>'}</div>`;
@@ -991,8 +1034,8 @@ function charmView() {
       ${sortBar("charm", CHARM_SORTS(), "added", "desc")}
     </div>
     <div class="list cols" style="margin-top:10px" id="charm-list">${arr.map((x) => `<div class="item ${x.c.enabled === false ? "off" : ""}" data-cid="${x.c.id}">
-        <div class="ttl"><span class="grow chips">${skillChips(x.skills)}</span>${slotsHTML(x.slots, { pad: true, wslots: x.wslots })}</div>
-        ${x.c.note ? `<div class="meta">${esc(x.c.note)}</div>` : ""}
+        <div class="ttl"><span class="grow">${esc(x.name)}${regNoHTML(x.no)}${x.note ? ` <span class="pnote">${esc(x.note)}</span>` : ""}</span>${slotsHTML(x.slots, { pad: true, wslots: x.wslots })}</div>
+        <div class="chips">${skillChips(x.skills)}</div>
         <div class="acts"><label class="inline"><input type="checkbox" class="mini-switch" data-act="c-enable" ${x.c.enabled !== false ? "checked" : ""}>検索対象</label>
         <span class="right"></span><button class="btn sm" data-act="c-edit">編集</button><button class="btn sm danger" data-act="c-del">削除</button></div></div>`).join("") || `<p class="muted">未登録</p>`}</div>`;
 }
@@ -1107,8 +1150,8 @@ function weaponView() {
     <div class="card">${sortBar("weapon", WEAPON_SORTS, "added", "desc")}
 </div>
     <div class="list cols" style="margin-top:10px">${arr.map((w) => `<div class="item ${w.enabled === false ? "off" : ""}" data-wid="${w.id}">
-      <div class="ttl"><span class="grow">${esc(w.name)}</span>${slotsHTML(w.slots, { pad: true })}</div>
-      <div class="meta"><span>${esc(w.type || "")}</span>${w.note ? `<span>${esc(w.note)}</span>` : ""}</div>
+      <div class="ttl"><span class="grow">${esc(w.name)}${regNoHTML(w.no)}${w.note ? ` <span class="pnote">${esc(w.note)}</span>` : ""}</span>${slotsHTML(w.slots, { pad: true })}</div>
+      <div class="meta"><span>${esc(w.type || "")}</span></div>
       <div class="acts"><label class="inline"><input type="checkbox" class="mini-switch" data-act="w-enable" ${w.enabled !== false ? "checked" : ""}>検索対象</label>
       <span class="right"></span><button class="btn sm" data-act="w-edit">編集</button><button class="btn sm danger" data-act="w-del">削除</button></div></div>`).join("") || '<p class="muted">未登録</p>'}</div>`;
 }
@@ -1293,6 +1336,26 @@ const setKeyFns = {
   savedAt: (x) => x.savedAt, def: (x) => x.def, freeCount: (x) => x.freeCount, freeCap: (x) => x.freeCap,
   __skill: (n) => (x) => x.skills[n] || 0,
 };
+// マイセットの装備が、いまの登録内容と同じか（傀異錬成・護石などは後から編集・削除されうる）
+function currentRegItem(key) {
+  const st = S();
+  const [k, id] = [key.split(":")[0], key.slice(key.indexOf(":") + 1)];
+  // 見つからない（削除済み）は null、マスタ装備は undefined
+  if (k === "q") { const q = st.qurious.find((x) => x.id === id); return q ? quriousItem(q) : null; }
+  if (k === "c") { const c = st.charms.find((x) => x.id === id); return c ? charmItem(c) : null; }
+  if (k === "ar") { const a = st.artians.find((x) => x.id === id); return a ? artianItem(a) : null; }
+  if (k === "w" && id !== "manual") { const w = st.weapons.find((x) => x.id === id); return w ? weaponItem(w) : null; }
+  return undefined; // マスタ装備（変化しない）
+}
+function regStatusHTML(p) {
+  if (!p.key || !p.skills) return "";
+  const cur = currentRegItem(p.key);
+  if (cur === undefined) return "";
+  if (!cur) return '<span class="tag warn">削除済み</span>';
+  const sig = (it) => JSON.stringify([Object.entries(it.skills || {}).filter(([, v]) => v > 0).sort(), (it.slots || []).slice().sort(), (it.wslots || []).slice().sort()]);
+  return sig(cur) !== sig(p) ? '<span class="tag warn">登録変更あり</span>' : "";
+}
+
 function renderMysets() {
   const st = S();
   const ss = sortState("mysets", "savedAt", "desc");
@@ -1306,8 +1369,10 @@ function renderMysets() {
         <div class="res-head"><input type="text" class="grow" data-act="set-memo" value="${esc(x.memo || "")}" placeholder="メモ（例: 太刀 火力）">
           <button class="btn sm danger" data-act="set-del">削除</button></div>
         <div class="muted small" style="margin-top:4px">${new Date(x.savedAt).toLocaleString("ja-JP")} ／ 防御 <b>${x.def}</b> ／ 空き ${freeHTML(x.free, x.freeW)}</div>
-        <table class="pieces">${x.pieces.map((p) => `<tr><td class="p">${PART_LABEL[p.part]}</td><td class="n">${p.kind === "qurious" ? '<span class="tag q">傀異</span> ' : p.kind === "artian" ? '<span class="tag q">アーティア</span> ' : ""}${esc(p.name)}${p.note ? `（${esc(p.note)}）` : ""}
-          ${p.decos.length ? `<div class="decos">${p.decos.map((d) => d.deco ? `${slotTag(d.size, d.type)}${esc(d.deco)}` : `${slotTag(d.size, d.type, true)}空き`).join(" ")}</div>` : ""}</td></tr>`).join("")}</table>
+        <table class="pieces">${x.pieces.map((p) => pieceRowHTML({
+          part: p.part, tag: itemTag({ kind: p.kind, key: p.key }), name: p.name, no: p.no, note: p.note,
+          skills: p.skills, decos: p.decos, extra: regStatusHTML(p),
+        })).join("")}</table>
         <div class="chips" style="margin-top:6px">${skillChips(x.skills, { targets, result: true })}</div></div>`;
     }).join("") || '<p class="muted">未保存</p>'}</div>`;
 }
@@ -1402,7 +1467,8 @@ function helpBody(key) {
     case "results": return `
       <h3>見方</h3>
       <ul>
-        <li>部位ごとに装備名と、付ける装飾品が表示されます。${ex(slotTag(2, "A", true))} は空きスロットです。</li>
+        <li>部位ごとに、装備名・その装備のスキル・付ける装飾品が表示されます。${ex(slotTag(2, "A", true))} は空きスロットです。</li>
+        <li><span class="regno">No.3</span> は登録番号です。装備タブの一覧と同じ番号で、どの${w ? "アーティア・光るお守り" : "傀異錬成防具・護石・武器"}が選ばれたか分かります（メモも表示）。</li>
         ${w ? `<li>${ex(slotTag(3, "W"))} 丸は武器用スロット、${ex(slotTag(3, "A"))} 四角は防具用スロットです。武器用の装飾品は武器用スロットにだけ付きます。</li>` : ""}
         <li>スキルの色: <span class="chip ok">緑</span> 条件を達成、<span class="chip ng">赤</span> 未達（希望スキル）。</li>
         ${w ? "<li>シリーズ／グループスキルは「4pt→力自慢Ⅱ」のようにポイントと発動スキルを表示します。</li>" : ""}
@@ -1479,7 +1545,8 @@ function helpBody(key) {
       </ul>`;
     case "mysets": return `
       <ul>
-        <li>結果タブの<b>⭐保存</b>で追加されます。</li>
+        <li>結果タブの<b>⭐保存</b>で追加されます。保存時の装備名・登録番号・スキル・装飾品が記録されます。</li>
+        <li><span class="tag warn">登録変更あり</span>: 保存後に、その登録装備のスキルやスロットを編集しました。<span class="tag warn">削除済み</span>: その登録装備を削除しました。</li>
         <li>メモ欄に自由に名前を付けられます。並び替えもできます。</li>
       </ul>`;
     case "settings": return `
@@ -1711,7 +1778,7 @@ view.addEventListener("click", (e) => {
         body: `<div class="list">${keys.map((k) => {
           const it = last.keyMap[k];
           if (!it) return "";
-          return `<div class="item"><div class="ttl"><span class="grow">${itemTag(it)}${esc(itemName(it))}</span>${slotsHTML(it.slots, { wslots: it.wslots })}</div>
+          return `<div class="item"><div class="ttl"><span class="grow">${itemTag(it)}${esc(itemName(it))}${regNoHTML(it.no)}${it.note ? ` <span class="pnote">${esc(it.note)}</span>` : ""}</span>${slotsHTML(it.slots, { wslots: it.wslots })}</div>
             <div class="meta">防御${it.def || 0}${it.attack ? " 攻撃" + it.attack : ""}</div><div class="chips">${skillChips(it.skills)}</div></div>`;
         }).join("")}</div>`,
       });
