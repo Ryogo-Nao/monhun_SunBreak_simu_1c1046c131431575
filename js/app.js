@@ -105,7 +105,7 @@ function skillChips(skills, opt = {}) {
         if (!lv && tg[k] == null) cls += " dim";
       } else txt = `${k}+${v}`;
     } else txt = `${k}Lv${v}`;
-    return `<span class="${cls}">${esc(txt)}</span>`;
+    return `<button type="button" class="${cls} sk" data-skill-info="${esc(k)}">${esc(txt)}</button>`;
   }).join("");
 }
 function slotSum(slots) { return (slots || []).reduce((a, b) => a + b, 0); }
@@ -138,6 +138,31 @@ function sortBar(id, options, defKey, defDir) {
   </div>`;
 }
 
+// ---- スキル詳細（ゲーム内の「スキル内容」「スキル詳細」）。スキル名をタップすると開く ----
+function showSkillInfo(name) {
+  const s = SKILL[name];
+  if (!s) return;
+  const series = !!s.thresholds;
+  const rows = (s.details || []).map((d, i) => {
+    const lbl = series ? `${s.names[i]}（${s.thresholds[i]}部位）` : `Lv${i + 1}`;
+    return `<div class="lvrow"><div class="lv">${esc(lbl)}</div><div class="tx">${d ? esc(d) : '<span class="muted">―</span>'}</div></div>`;
+  }).join("");
+  openModal({
+    title: name,
+    body: `<div class="chips" style="margin-bottom:10px"><span class="chip">${esc(s.cat)}</span><span class="chip">${series ? s.names.length + "段階" : "最大Lv" + s.max}</span></div>` +
+      (s.explain ? fsec("スキル内容", `<p class="sktext">${esc(s.explain)}</p>`) : "") +
+      fsec("スキル詳細", rows || '<p class="muted" style="margin:0">データなし</p>'),
+  });
+}
+// どの画面のスキル名でも反応するよう、捕捉段階で拾って他の操作より先に処理する
+document.addEventListener("click", (e) => {
+  const el = e.target.closest && e.target.closest("[data-skill-info]");
+  if (!el) return;
+  e.preventDefault();
+  e.stopPropagation();
+  showSkillInfo(el.dataset.skillInfo);
+}, true);
+
 // ---- 登録番号: 登録した装備（傀異錬成・護石・アーティア・登録武器）を画面間で特定するための番号 ----
 const REG_LISTS = ["qurious", "charms", "artians", "weapons"];
 function ensureRegNos(st) {
@@ -163,7 +188,7 @@ const regNoHTML = (no) => (no ? ` <span class="regno">No.${no}</span>` : "");
 function skillText(skills) {
   const ent = Object.entries(skills || {}).filter(([, v]) => v > 0);
   if (!ent.length) return "";
-  return ent.map(([k, v]) => `${esc(k)}${thr(k) ? "+" + v : "Lv" + v}`).join("・");
+  return ent.map(([k, v]) => `<button type="button" class="sk-link" data-skill-info="${esc(k)}">${esc(k)}${thr(k) ? "+" + v : "Lv" + v}</button>`).join("・");
 }
 // 結果・マイセット共通: 部位1行（装備名＋登録番号＋メモ、その装備のスキル、装着する装飾品）
 function pieceRowHTML({ part, tag = "", name, no, note, skills, decos, extra = "" }) {
@@ -305,7 +330,8 @@ function pickSkill({ title = "スキルを選択", onPick, multi = false, select
         for (const s of arr) {
           if (!norm(q) && s.cat !== lastCat) { h += `<div class="cat">${esc(s.cat)}</div>`; lastCat = s.cat; }
           const info = s.thresholds ? s.names.map((n, i) => `${n}(${s.thresholds[i]}pt)`).join(" / ") : `最大Lv${s.max}`;
-          h += `<button data-skill="${esc(s.name)}" class="${sel.has(s.name) ? "sel" : ""}">${sel.has(s.name) ? "✓ " : ""}${esc(s.name)} <span class="muted small">${norm(q) ? esc(s.cat) + " / " : ""}${esc(info)}</span></button>`;
+          h += `<div class="prow"><button data-skill="${esc(s.name)}" class="${sel.has(s.name) ? "sel" : ""}">${sel.has(s.name) ? "✓ " : ""}${esc(s.name)} <span class="muted small">${norm(q) ? esc(s.cat) + " / " : ""}${esc(info)}</span></button>
+            <button type="button" class="info-btn" data-skill-info="${esc(s.name)}" aria-label="${esc(s.name)}の詳細">詳細</button></div>`;
         }
         list.innerHTML = h || '<p class="muted">該当なし</p>';
       };
@@ -419,7 +445,7 @@ function renderSearch() {
     const max = sk ? sk.max : 7;
     return `<div class="cond ${c.required ? "req" : ""}" data-i="${i}">
       <span class="pri" title="優先度">${i + 1}</span>
-      <span class="nm">${esc(c.skill)}</span>
+      <button type="button" class="nm sk-link" data-skill-info="${esc(c.skill)}">${esc(c.skill)}</button>
       <span class="ctl">
         <button class="btn sm icon" data-act="cond-up" ${i === 0 ? "disabled" : ""} aria-label="優先度を上げる">↑</button>
         <button class="btn sm icon" data-act="cond-down" ${i === conds.length - 1 ? "disabled" : ""} aria-label="優先度を下げる">↓</button>
@@ -1519,8 +1545,57 @@ function regStatusHTML(p) {
   return sig(cur) !== sig(p) ? '<span class="tag warn">登録変更あり</span>' : "";
 }
 
+// 旧形式のマイセット（部位ごとのスキルを記録する前に保存したもの）を、登録内容から補完する。
+// 防具・固定護石・マスタ武器は名前で一意に決まる。傀異錬成・護石・アーティア・登録武器は
+// 名前・メモ・装飾品のスロット構成が一致する登録が1つだけなら、それを当てはめる（推定）。
+function backfillSet(x) {
+  let changed = false;
+  const st = S();
+  for (const p of x.pieces || []) {
+    if (p.skills) continue;
+    const decoSlots = (type) => (p.decos || []).filter((d) => (d.type || "A") === type).map((d) => d.size).sort((a, b) => b - a).join(",");
+    const slotsOk = (it) => (it.slots || []).slice().sort((a, b) => b - a).join(",") === decoSlots("A") &&
+      (it.wslots || []).slice().sort((a, b) => b - a).join(",") === decoSlots("W");
+    // 旧形式は「護石（メモ）」のように名前にメモを含むことがある
+    let name = p.name, note = p.note || "";
+    const m = /^(護石|光るお守り)（(.*)）$/.exec(name || "");
+    if (m) { name = m[1]; note = note || m[2]; }
+    let found = null, cands = [];
+    if (p.kind === "armor" || (!p.kind && PARTS.includes(p.part))) {
+      found = M.armors.find((a) => a.part === p.part && a.name === name);
+      if (found) found = { key: found.id, skills: found.skills, slots: found.slots, wslots: [] };
+    } else if (p.kind === "fcharm") {
+      const c = (M.charms || []).find((c) => c.name === name);
+      if (c) found = { key: c.id, skills: c.skills, slots: [], wslots: [] };
+    } else if (p.kind === "weapon" && isW() && name !== "武器（スロット指定）") {
+      const w = (M.weapons || []).find((w) => w.name === name);
+      if (w) found = { key: w.id, skills: w.skills, slots: [], wslots: w.slots };
+    } else {
+      const pool = p.kind === "qurious" ? st.qurious.map(quriousItem).filter((it) => it && it.part === p.part && it.name === name)
+        : p.kind === "charm" ? st.charms.map(charmItem)
+        : p.kind === "artian" ? st.artians.map(artianItem).filter((it) => it.name === name)
+        : p.kind === "weapon" ? st.weapons.map(weaponItem).filter((it) => it.name === name) : [];
+      cands = pool.filter((it) => (!note || it.note === note) && slotsOk(it));
+      if (cands.length === 1) found = { ...cands[0], inferred: true };
+    }
+    if (found) {
+      p.key = found.key; p.skills = { ...found.skills }; p.slots = (found.slots || []).slice(); p.wslots = (found.wslots || []).slice();
+      if (found.no) p.no = found.no;
+      if (found.inferred) p.inferred = true;
+      if (note && !p.note) p.note = note;
+      p.name = name;
+      changed = true;
+    } else if (cands.length > 1 && !p.cands) {
+      p.cands = cands.map((c) => c.no);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 function renderMysets() {
   const st = S();
+  if (st.mysets.map(backfillSet).some(Boolean)) save();
   const ss = sortState("mysets", "savedAt", "desc");
   const arr = sorted(st.mysets.slice(), ss.key, ss.dir, setKeyFns);
   view.innerHTML = `
@@ -1534,7 +1609,8 @@ function renderMysets() {
         <div class="muted small" style="margin-top:4px">${new Date(x.savedAt).toLocaleString("ja-JP")} ／ 防御 <b>${x.def}</b> ／ 空き ${freeHTML(x.free, x.freeW)}</div>
         <table class="pieces">${x.pieces.map((p) => pieceRowHTML({
           part: p.part, tag: itemTag({ kind: p.kind, key: p.key }), name: p.name, no: p.no, note: p.note,
-          skills: p.skills, decos: p.decos, extra: regStatusHTML(p),
+          skills: p.skills, decos: p.decos,
+          extra: regStatusHTML(p) + (p.inferred ? '<span class="tag">推定</span>' : "") + (p.cands ? `<span class="pnote">候補 ${p.cands.map((n) => "No." + n).join("・")}</span>` : ""),
         })).join("")}</table>
         <div class="chips" style="margin-top:6px">${skillChips(x.skills, { targets, result: true })}</div></div>`;
     }).join("") || '<p class="muted">未保存</p>'}</div>`;
@@ -1599,6 +1675,7 @@ function helpBody(key) {
       <h3>スキル条件</h3>
       <ul>
         <li><b>＋スキル追加</b>: 発動させたいスキルを選びます。名前の一部・読み（例:「弱特」「こうげき」）でも探せます。</li>
+        <li><b>スキル名</b>を押すと、そのスキルの<b>スキル内容</b>と<b>スキル詳細</b>（Lvごとの効果）を表示します。スキル選択画面では各行の<b>詳細</b>で表示します。</li>
         <li><b>並び順＝優先度</b>: 上ほど優先。<b>↑↓</b>で入れ替え、<b>✕</b>で削除。</li>
         <li><b>Lv</b>: 必要なスキルLvを選びます。${w ? "シリーズ／グループスキルは発動段階（例: 力自慢Ⅱ＝4部位）を選びます。" : ""}</li>
         <li><b>必須 ON</b>: 必ず満たす組み合わせだけを表示します。数の制限はありません。</li>
@@ -1636,6 +1713,7 @@ function helpBody(key) {
         <li>スキルの色: <span class="chip ok">緑</span> 条件を達成、<span class="chip ng">赤</span> 未達（希望スキル）。</li>
         ${w ? "<li>シリーズ／グループスキルは「4pt→力自慢Ⅱ」のようにポイントと発動スキルを表示します。</li>" : ""}
         <li><b>同等+N</b>: 条件スキルとスロットが同じ装備が他にN件あります。押すと一覧を表示します。</li>
+        <li>スキル名（色付きのラベルや、装備名の下のスキル）を押すと、スキル内容とスキル詳細を表示します。</li>
         <li><b>${ICON_STAR}保存</b>: マイセットに保存します。同じ組み合わせが保存済みなら確認します。</li>
       </ul>
       <h3>並び替え・絞り込み</h3>
@@ -1716,6 +1794,7 @@ function helpBody(key) {
     case "mysets": return `
       <ul>
         <li>結果タブの<b>${ICON_STAR}保存</b>で追加されます。保存時の装備名・登録番号・スキル・装飾品が記録されます。</li>
+        <li>以前の形式で保存したマイセットは、装備名・メモ・スロット構成から登録装備を当てはめて表示します（<span class="tag">推定</span>）。1つに決まらないときは候補の登録番号を表示します。</li>
         <li><span class="tag warn">登録変更あり</span>: 保存後に、その登録装備のスキルやスロットを編集しました。<span class="tag warn">削除済み</span>: その登録装備を削除しました。</li>
         <li>メモ欄に自由に名前を付けられます。並び替えもできます。</li>
       </ul>`;

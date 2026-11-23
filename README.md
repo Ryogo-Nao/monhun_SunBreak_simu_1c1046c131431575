@@ -75,6 +75,10 @@ python3 -m http.server 8000
 | ワイルズ | [WildsSim](https://github.com/EXXXI/WildsSim)（MIT, © 2025 EXXXI）2026/3/4 更新CSV | `tools/convert_wilds.py` | `data/wilds/master.json` |
 
 - 元CSVとライセンスは `data/source/`・`data/wilds/source/` にあります。
+- **スキル内容・スキル詳細（ゲーム内の説明文）**: `tools/skill_text.py` で各 `master.json` に追加しています（テキストの著作権は CAPCOM）。
+  - サンブレイク: [dtlnor/MHRTextDump](https://github.com/dtlnor/MHRTextDump) の `Japanese/PlayerSkill_*` から抽出
+  - ワイルズ: [LartTyler/mhdb-wilds-data](https://github.com/LartTyler/mhdb-wilds-data)（GPL-3.0）の `output/merged/Skill.json` から抽出
+  - 抽出結果だけをリポジトリに含めています。`convert.py`／`convert_wilds.py` を実行し直したときは、続けて `python3 tools/skill_text.py sb <Japaneseフォルダ>` ／ `python3 tools/skill_text.py wilds <Skill.json>` を実行してください（並びのずれを検出したら中断します）。
 - **データ更新（ワイルズのアップデート・大型拡張「アセンダンス」等）**: WildsSim の最新 `MHWilds_*.csv` を `data/wilds/source/` に上書きして `python3 tools/convert_wilds.py` を実行してください。拡張で新しい仕組み（例: 新たなランダム要素の装備）が増えた場合は、データだけでなくアプリ側の対応も必要になる可能性があります。
 - 登録した手持ちデータはブラウザの localStorage に保存されます（端末ごと・タイトルごと。サーバーには送信されません）。
 

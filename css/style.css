@@ -340,3 +340,18 @@ button.chip::after { inset: -4px 0; }
 .pnote { font-size: 12px; font-weight: 400; color: var(--ink2); }
 .pskills { font-size: 12px; color: var(--ink); opacity: .85; margin-top: 1px; }
 .tag.warn { background: var(--ng-soft); color: var(--ng); }
+
+/* スキル名（タップでスキル詳細） */
+button.chip.sk { min-height: 0; padding: 1px 9px; font: inherit; font-size: 13px; color: inherit; }
+button.chip.sk::after { inset: -6px -2px; }
+.sk-link { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; position: relative; }
+.sk-link::after { content: ""; position: absolute; inset: -8px -2px; }
+.cond .nm.sk-link { text-align: left; font-weight: 700; }
+.pick-list .prow { display: flex; align-items: stretch; border-top: 1px solid var(--line); }
+.pick-list .prow:first-child { border-top: 0; }
+.pick-list .prow > button[data-skill] { flex: 1; min-width: 0; border-top: 0; }
+.pick-list .info-btn { flex: none; border: 0; background: none; color: var(--accent); font-size: 13px; padding: 0 6px 0 12px; min-width: 52px; cursor: pointer; }
+.lvrow { display: grid; grid-template-columns: 7.5em minmax(0, 1fr); gap: 4px 10px; padding: 7px 0; border-top: 1px solid var(--line); }
+.lvrow:first-child { border-top: 0; padding-top: 0; }
+.lvrow .lv { font-weight: 700; font-size: 14px; }
+.lvrow .tx, .sktext { white-space: pre-line; font-size: 14px; margin: 0; }
