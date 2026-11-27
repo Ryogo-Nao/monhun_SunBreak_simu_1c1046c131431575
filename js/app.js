@@ -308,7 +308,8 @@ document.addEventListener("keydown", (e) => {
 });
 
 // スキル選択モーダル  filter: (skill) => boolean
-function pickSkill({ title = "スキルを選択", onPick, multi = false, selected = [], filter = null, query = "" }) {
+// multi: 複数選択（選択済みをもう一度押すと選択を外す。onUnpick で通知）
+function pickSkill({ title = "スキルを選択", onPick, onUnpick = null, multi = false, selected = [], filter = null, query = "" }) {
   let q = query, cat = "";
   const sel = new Set(selected);
   const base = M.skills.filter((s) => s.cat !== "汎用錬成スキル" && (!filter || filter(s)));
@@ -349,9 +350,14 @@ function pickSkill({ title = "スキルを選択", onPick, multi = false, select
         if (!b) return;
         const name = b.dataset.skill;
         if (multi) {
-          if (sel.has(name)) return;
-          sel.add(name);
-          onPick(name);
+          if (sel.has(name)) {
+            if (!onUnpick) return;
+            sel.delete(name);
+            onUnpick(name);
+          } else {
+            sel.add(name);
+            onPick(name);
+          }
           render();
         } else {
           close();
@@ -833,7 +839,7 @@ function renderSearch() {
       <label class="switch"><span class="txt">装飾品の所持数を反映</span><input type="checkbox" data-opt="useDecoCount" ${o.useDecoCount ? "checked" : ""}></label>
       <label class="switch"><span class="txt">下位互換を除外（高速）</span><input type="checkbox" data-opt="pruneDominated" ${o.pruneDominated ? "checked" : ""}></label>
       <label class="switch"><span class="txt">希望スキル全達成のみ</span><input type="checkbox" data-opt="onlyFullSoft" ${o.onlyFullSoft ? "checked" : ""}></label>
-      ${fld("最大件数", `<select data-act="limit">${[100000, 20000, 5000, 1000, 500].map((v) => `<option value="${v}" ${o.limit === v ? "selected" : ""}>${v.toLocaleString()}件</option>`).join("")}</select>`)}
+      ${fld("最大件数", `<select data-act="limit">${[100000, 20000, 5000, 1000, 500, 100].map((v) => `<option value="${v}" ${o.limit === v ? "selected" : ""}>${v.toLocaleString()}件</option>`).join("")}</select>`)}
     </div>
   </div>
   </div>
@@ -2043,7 +2049,7 @@ function helpBody(key) {
       </ul>
       <h3>スキル条件</h3>
       <ul>
-        <li><b>＋スキル追加</b>: 発動させたいスキルを選びます。名前の一部・読み（例:「弱特」「こうげき」）でも探せます。</li>
+        <li><b>＋スキル追加</b>: 発動させたいスキルを選びます。名前の一部・読み（例:「弱特」「こうげき」）でも探せます。選択済み（✓）のスキルをもう一度押すと、選択を外して条件から削除します。</li>
         <li><b>スキル名</b>を押すと、そのスキルの<b>スキル内容</b>と<b>スキル詳細</b>（Lvごとの効果）を表示します。スキル選択画面では各行の<b>詳細</b>で表示します。</li>
         <li><b>並び順＝優先度</b>: 上ほど優先。<b>↑↓</b>で入れ替え、<b>✕</b>で削除。</li>
         <li><b>Lv</b>: 必要なスキルLvを選びます。${w ? "シリーズ／グループスキルは発動段階（例: 力自慢Ⅱ＝4部位）を選びます。" : ""}</li>
@@ -2367,6 +2373,7 @@ view.addEventListener("click", (e) => {
       pickSkill({
         title: "条件に追加するスキル", multi: true, selected: st.conds.map((c) => c.skill),
         onPick(n) { update((s) => { s.conds.push({ skill: n, level: SKILL[n].max, required: true }); }); rerender(); },
+        onUnpick(n) { update((s) => { s.conds = s.conds.filter((c) => c.skill !== n); }); rerender(); },
       });
       break;
     case "cond-clear":
