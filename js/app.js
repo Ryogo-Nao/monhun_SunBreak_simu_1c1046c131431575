@@ -1,4 +1,4 @@
-import { getState, getGame, setGame, update, save, exportJSON, importJSON, resetAll, uid, setNormalizer } from "./store.js";
+import { getState, getGame, setGame, update, save, exportJSON, importJSON, resetAll, uid, setNormalizer, onChange } from "./store.js";
 import { norm, match, matchAny, score, resolveByScore } from "./search.js";
 
 // ======================================================================
@@ -164,7 +164,7 @@ document.addEventListener("click", (e) => {
 }, true);
 
 // ---- 登録番号: 登録した装備（傀異錬成・護石・アーティア・登録武器）を画面間で特定するための番号 ----
-const REG_LISTS = ["qurious", "charms", "artians", "weapons"];
+const REG_LISTS = ["qurious", "charms", "artians", "weapons", "savedConds"];
 function ensureRegNos(st) {
   for (const key of REG_LISTS) {
     const list = st[key] || [];
@@ -434,6 +434,353 @@ function readTypedSlots(m) {
 }
 
 // ======================================================================
+// 検索条件の保存・呼び出し・共有（タイトルごと）
+//  保存する内容: スキル条件（並び順＝優先度）・武器の指定・検索対象スイッチ・最大件数
+//  所持登録・装飾品の所持数などの「手持ち側の状態」は含めない
+// ======================================================================
+const COND_OPT_KEYS = ["includeUnowned", "includeQurious", "pruneDominated", "onlyFullSoft", "useDecoCount", "limit"];
+function currentCond() {
+  const st = S();
+  const o = st.simOpts;
+  return {
+    conds: st.conds.map((c) => ({ skill: c.skill, level: c.level, required: !!c.required })),
+    weapon: { weapon: o.weapon, weaponType: o.weaponType || "", weaponSlots: (o.weaponSlots || []).filter((v) => v > 0).sort((a, b) => b - a) },
+    opts: Object.fromEntries(COND_OPT_KEYS.map((k) => [k, o[k]])),
+  };
+}
+// 中身の比較用（検索結果に影響しない差は無視する）
+function condSig(c) {
+  if (!c) return "";
+  const w = c.weapon || {};
+  return JSON.stringify([
+    (c.conds || []).map((x) => [x.skill, x.level, !!x.required]),
+    [w.weapon, isW() ? w.weaponType || "" : "", w.weapon === "manual" ? (w.weaponSlots || []).filter((v) => v > 0).sort((a, b) => b - a) : []],
+    COND_OPT_KEYS.map((k) => (c.opts || {})[k]),
+  ]);
+}
+const condName = (x) => x.name || `検索条件（${x.no}）`;
+function nextCondNo() {
+  const st = S();
+  return Math.max(0, ...st.savedConds.map((x) => x.no || 0), (st.regSeq || {}).savedConds || 0) + 1;
+}
+const activeSaved = () => (S().activeCondId ? S().savedConds.find((x) => x.id === S().activeCondId) || null : null);
+function condDirty() {
+  const a = activeSaved();
+  return a ? condSig(a.cond) !== condSig(currentCond()) : false;
+}
+// 今の条件がどこにも保存されていない（呼び出す前に確認が必要）か
+function condUnsaved() {
+  const cur = currentCond();
+  if (!cur.conds.length) return false;
+  const sig = condSig(cur);
+  return !S().savedConds.some((x) => condSig(x.cond) === sig);
+}
+// 一覧用の短い要約
+function condSkillsText(c) {
+  return (c.conds || []).map((x) => `<button type="button" class="sk-link" data-skill-info="${esc(x.skill)}">${esc(condText(x))}</button>${x.required ? "" : '<span class="muted">（希望）</span>'}`).join("・") || '<span class="muted">スキルなし</span>';
+}
+function condWeaponText(c) {
+  const w = c.weapon || {};
+  const slots = (w.weaponSlots || []).join("-") || "なし";
+  if (isW()) {
+    const t = w.weaponType || M.weaponTypes[0];
+    if (w.weapon === "manual") return `${t}・スロット指定 ${slots}`;
+    if ((w.weapon || "").startsWith("ar:")) { const a = S().artians.find((x) => "ar:" + x.id === w.weapon); return a ? `${t}・No.${a.no} ${artianItem(a).name}` : `${t}・アーティア（削除済み）`; }
+    if (WEAPON[w.weapon]) return `${t}・${WEAPON[w.weapon].name}`;
+    return `${t}すべて`;
+  }
+  if (w.weapon === "manual" || !w.weapon) return `スロット指定 ${slots}`;
+  if (w.weapon === "all") return "登録武器すべて";
+  const x = S().weapons.find((y) => y.id === w.weapon);
+  return x ? `No.${x.no} ${x.name}` : "登録武器（削除済み）";
+}
+
+// 条件を今の検索条件に反映。データにないスキルや武器は外して知らせる
+function applyCond(cond, opt = {}) {
+  const dropped = [];
+  const conds = [];
+  for (const c of cond.conds || []) {
+    const s = SKILL[c.skill];
+    if (!s) { dropped.push(c.skill); continue; }
+    conds.push({ skill: c.skill, level: Math.max(1, Math.min(c.level || 1, s.max)), required: !!c.required });
+  }
+  const w = { ...(cond.weapon || {}) };
+  let weaponNote = "";
+  if (isW()) {
+    if (!M.weaponTypes.includes(w.weaponType)) w.weaponType = M.weaponTypes[0];
+    const ok = w.weapon === "type" || w.weapon === "manual" || WEAPON[w.weapon] ||
+      ((w.weapon || "").startsWith("ar:") && S().artians.some((a) => "ar:" + a.id === w.weapon));
+    if (!ok) { w.weapon = "type"; weaponNote = "武器"; }
+  } else {
+    const ok = w.weapon === "manual" || w.weapon === "all" || S().weapons.some((x) => x.id === w.weapon);
+    if (!ok) { w.weapon = "manual"; weaponNote = "武器"; }
+  }
+  update((s) => {
+    s.conds = conds;
+    if (cond.weapon) {
+      s.simOpts.weapon = w.weapon;
+      if (w.weaponType) s.simOpts.weaponType = w.weaponType;
+      s.simOpts.weaponSlots = (w.weaponSlots || []).slice();
+    }
+    if (cond.opts) for (const k of COND_OPT_KEYS) if (cond.opts[k] !== undefined) s.simOpts[k] = cond.opts[k];
+    s.activeCondId = opt.id || null;
+    if (opt.id) {
+      const x = s.savedConds.find((y) => y.id === opt.id);
+      if (x) { x.usedAt = Date.now(); x.useCount = (x.useCount || 0) + 1; }
+    }
+  });
+  const msg = [];
+  if (dropped.length) msg.push(`スキル${dropped.length}件`);
+  if (weaponNote) msg.push("武器の指定");
+  toast(msg.length ? `${msg.join("・")}が見つからず外しました` : (opt.label || "呼び出しました"));
+}
+// 置き換え前の確認（今の条件が未保存・変更ありのとき）
+function confirmReplace() {
+  if (!S().conds.length) return true;
+  if (condDirty()) return confirm("呼び出し中の条件に保存していない変更があります。置き換えますか？");
+  if (!activeSaved() && condUnsaved()) return confirm("今の条件は保存されていません。置き換えますか？");
+  return true;
+}
+
+// 保存シート。cond: 保存する条件（既定は今の条件）。fromCurrent: 今の条件から（上書き保存を選べる）
+function saveCondDialog(cond = currentCond(), fromCurrent = true) {
+  const act = fromCurrent ? activeSaved() : null;
+  let mode = act ? "over" : "new";
+  openModal({
+    title: "検索条件を保存",
+    body: '<div data-form></div>',
+    foot: '<button class="btn" data-close>キャンセル</button><button class="btn primary" data-save>保存</button>',
+    onMount(m, close) {
+      const f = m.querySelector("[data-form]");
+      const render = () => {
+        f.innerHTML = (act ? `<div class="seg" style="margin-bottom:12px" data-mode>
+            <button data-md="over" class="${mode === "over" ? "on" : ""}">上書き保存</button><button data-md="new" class="${mode === "new" ? "on" : ""}">新規保存</button></div>` : "") +
+          fsec("", fld("ニックネーム", `<input type="text" data-name value="${esc(mode === "over" ? act.name || "" : "")}" placeholder="${esc(mode === "over" ? condName(act) : `検索条件（${nextCondNo()}）`)}" maxlength="40">`)) +
+          fsec("保存する内容", `<div class="pskills">${condSkillsText(cond)}</div><div class="meta" style="margin-top:4px">${esc(condWeaponText(cond))}</div>`);
+      };
+      render();
+      f.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-md]");
+        if (b) { mode = b.dataset.md; render(); }
+      });
+      m.querySelector("[data-save]").addEventListener("click", () => {
+        const name = f.querySelector("[data-name]").value.trim();
+        const now = Date.now();
+        const rec = mode === "over"
+          ? { ...act, name, cond: JSON.parse(JSON.stringify(cond)), updatedAt: now }
+          : { id: uid(), name, cond: JSON.parse(JSON.stringify(cond)), createdAt: now, updatedAt: now, usedAt: now, useCount: 0 };
+        if (!okToSave("savedConds", rec)) return;
+        update((s) => {
+          const i = s.savedConds.findIndex((x) => x.id === rec.id);
+          if (i >= 0) s.savedConds[i] = rec; else s.savedConds.push(rec);
+          if (fromCurrent) s.activeCondId = rec.id;
+        });
+        close();
+        toast(mode === "over" ? "上書き保存しました" : "保存しました");
+        rerender();
+      });
+    },
+  });
+}
+
+// 一覧（呼び出し）シート
+function condListDialog() {
+  let q = "", sortKey = "updatedAt";
+  const SORTS = [["updatedAt", "更新日"], ["useCount", "よく使う順"], ["usedAt", "最近使った順"], ["no", "登録順"], ["name", "名前"]];
+  openModal({
+    title: "検索条件の呼び出し",
+    body: `<div class="row nowrap"><input type="search" class="grow" data-q placeholder="名前・スキル名" aria-label="絞り込み">
+        <select data-sort aria-label="並び替え" style="width:auto">${SORTS.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div>
+      <div class="row" style="margin-top:8px"><button class="btn sm" data-paste>共有リンクを貼り付け</button></div>
+      <div class="list" data-list style="margin-top:10px"></div>`,
+    onMount(m, close) {
+      const list = m.querySelector("[data-list]");
+      const render = () => {
+        const st = S();
+        let arr = st.savedConds.slice();
+        if (q) arr = arr.filter((x) => matchAny([condName(x), "No." + x.no, ...(x.cond.conds || []).map((c) => c.skill)], q));
+        const key = { name: (x) => condName(x), no: (x) => x.no }[sortKey] || ((x) => x[sortKey] || 0);
+        arr.sort((a, b) => (sortKey === "name" || sortKey === "no" ? cmp(key(a), key(b)) : cmp(key(b), key(a))));
+        list.innerHTML = arr.map((x) => `<div class="item" data-scid="${x.id}">
+            <div class="ttl"><span class="grow">${esc(condName(x))}${regNoHTML(x.no)}</span>${x.id === st.activeCondId ? '<span class="tag own">呼び出し中</span>' : ""}</div>
+            <div class="pskills" style="margin-top:4px">${condSkillsText(x.cond)}</div>
+            <div class="meta">${esc(condWeaponText(x.cond))}・${new Date(x.updatedAt || x.createdAt).toLocaleDateString("ja-JP")}</div>
+            <div class="acts"><button class="btn sm primary" data-load>呼び出す</button><button class="btn sm" data-share>共有</button><button class="btn sm" data-edit>編集</button></div>
+          </div>`).join("") || `<p class="muted">${st.savedConds.length ? "該当なし" : "未保存"}</p>`;
+      };
+      render();
+      m.querySelector("[data-q]").addEventListener("input", (e) => { q = e.target.value; render(); });
+      m.querySelector("[data-sort]").addEventListener("change", (e) => { sortKey = e.target.value; render(); });
+      m.querySelector("[data-paste]").addEventListener("click", () => pasteShareDialog());
+      list.addEventListener("click", (e) => {
+        const row = e.target.closest("[data-scid]");
+        if (!row) return;
+        const x = S().savedConds.find((y) => y.id === row.dataset.scid);
+        if (!x) return;
+        if (e.target.closest("[data-load]")) {
+          if (!confirmReplace()) return;
+          close();
+          applyCond(x.cond, { id: x.id, label: `「${condName(x)}」を呼び出しました` });
+          setTab("search");
+        } else if (e.target.closest("[data-share]")) {
+          shareCondDialog(x.cond, x.name || condName(x));
+        } else if (e.target.closest("[data-edit]")) {
+          editCondDialog(x, render);
+        }
+      });
+    },
+  });
+}
+
+// 編集シート（ニックネーム・複製・削除）
+function editCondDialog(x, onDone) {
+  openModal({
+    title: "検索条件を編集",
+    body: fsec("", fld("ニックネーム", `<input type="text" data-name value="${esc(x.name || "")}" placeholder="${esc(`検索条件（${x.no}）`)}" maxlength="40">`)) +
+      fsec("内容", `<div class="pskills">${condSkillsText(x.cond)}</div><div class="meta" style="margin-top:4px">${esc(condWeaponText(x.cond))}</div>`) +
+      `<div class="row"><button class="btn sm" data-copy>複製</button><button class="btn sm danger" data-del>削除</button></div>`,
+    foot: '<button class="btn" data-close>キャンセル</button><button class="btn primary" data-save>保存</button>',
+    onMount(m, close) {
+      m.querySelector("[data-save]").addEventListener("click", () => {
+        const name = m.querySelector("[data-name]").value.trim();
+        update((s) => { const y = s.savedConds.find((z) => z.id === x.id); if (y) { y.name = name; y.updatedAt = Date.now(); } });
+        close(); toast("保存しました"); onDone && onDone(); rerender();
+      });
+      m.querySelector("[data-copy]").addEventListener("click", () => {
+        const now = Date.now();
+        update((s) => { s.savedConds.push({ id: uid(), name: x.name ? x.name + "（コピー）" : "", cond: JSON.parse(JSON.stringify(x.cond)), createdAt: now, updatedAt: now, usedAt: now, useCount: 0 }); });
+        close(); toast("複製しました"); onDone && onDone(); rerender();
+      });
+      m.querySelector("[data-del]").addEventListener("click", () => {
+        if (!confirm(`「${condName(x)}」を削除しますか？`)) return;
+        update((s) => { s.savedConds = s.savedConds.filter((z) => z.id !== x.id); if (s.activeCondId === x.id) s.activeCondId = null; });
+        close(); toast("削除しました"); onDone && onDone(); rerender();
+      });
+    },
+  });
+}
+
+// 条件を変えるたびに、検索タブ上部の「変更あり」表示だけを更新する
+onChange(() => {
+  if (tab !== "search" || !M) return;
+  const el = view.querySelector(".condbar .cb-name");
+  const a = activeSaved();
+  if (!el || !a) return;
+  const dirty = condDirty();
+  const tag = el.querySelector(".tag.warn");
+  if (dirty && !tag) el.insertAdjacentHTML("beforeend", ' <span class="tag warn">変更あり</span>');
+  if (!dirty && tag) tag.remove();
+});
+
+// ---- 共有: 条件を URL（?share=...）にして送る。受け取った側は開くだけで取り込める ----
+// 他の端末にない登録武器・アーティアは、スロット指定に置き換えて送る
+function portableCond(cond) {
+  const c = JSON.parse(JSON.stringify(cond));
+  const w = c.weapon || {};
+  if (isW() && (w.weapon || "").startsWith("ar:")) {
+    const a = S().artians.find((x) => "ar:" + x.id === w.weapon);
+    c.weapon = { ...w, weapon: "manual", weaponSlots: a ? (a.wslots || [3, 3, 3]).slice() : w.weaponSlots };
+  } else if (!isW() && w.weapon && w.weapon !== "manual" && w.weapon !== "all") {
+    const x = S().weapons.find((y) => y.id === w.weapon);
+    c.weapon = { ...w, weapon: "manual", weaponSlots: x ? (x.slots || []).slice() : w.weaponSlots };
+  } else if (!isW() && w.weapon === "all") {
+    c.weapon = { ...w, weapon: "manual" };
+  }
+  return c;
+}
+const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64url = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (ch) => ch.charCodeAt(0));
+async function pipe(bytes, stream) {
+  const out = new Response(new Blob([bytes]).stream().pipeThrough(stream));
+  return new Uint8Array(await out.arrayBuffer());
+}
+async function encodeShare(cond, name) {
+  const json = new TextEncoder().encode(JSON.stringify({ v: 1, g: getGame(), n: name || "", c: portableCond(cond) }));
+  if (typeof CompressionStream === "function") {
+    try { return "z" + b64url(await pipe(json, new CompressionStream("deflate-raw"))); } catch (e) { /* 圧縮できない環境はそのまま */ }
+  }
+  return "j" + b64url(json);
+}
+async function decodeShare(code) {
+  const kind = code[0], body = unb64url(code.slice(1));
+  const bytes = kind === "z" ? await pipe(body, new DecompressionStream("deflate-raw")) : body;
+  const obj = JSON.parse(new TextDecoder().decode(bytes));
+  if (!obj || obj.v !== 1 || !obj.c || !Array.isArray(obj.c.conds)) throw new Error("形式が正しくありません");
+  return obj;
+}
+function shareUrl(code) {
+  return `${location.origin}${location.pathname}?share=${code}#search`;
+}
+function shareCondDialog(cond, name) {
+  openModal({
+    title: "検索条件を共有",
+    body: fsec("", `<div class="pname">${esc(name)}</div><div class="pskills" style="margin-top:4px">${condSkillsText(cond)}</div>`) +
+      fsec("リンク", `<input type="text" readonly data-url value="作成中…" aria-label="共有リンク">`),
+    foot: `<button class="btn" data-copy disabled>リンクをコピー</button>${navigator.share ? '<button class="btn primary" data-send disabled>共有…</button>' : ""}`,
+    async onMount(m) {
+      const url = shareUrl(await encodeShare(cond, name));
+      const inp = m.querySelector("[data-url]");
+      inp.value = url;
+      m.querySelectorAll("[data-copy],[data-send]").forEach((b) => (b.disabled = false));
+      m.querySelector("[data-copy]").addEventListener("click", () => {
+        navigator.clipboard.writeText(url).then(() => toast("リンクをコピーしました"), () => { inp.focus(); inp.select(); toast("リンクを選択しました。コピーしてください"); });
+      });
+      m.querySelector("[data-send]")?.addEventListener("click", () => {
+        navigator.share({ title: `検索条件: ${name}`, url }).catch(() => {});
+      });
+    },
+  });
+}
+// 受け取った条件の確認シート
+function importCondDialog(obj) {
+  const name = obj.n || "共有された検索条件";
+  openModal({
+    title: "共有された検索条件",
+    body: fsec("", `<div class="pname">${esc(name)}</div><div class="pskills" style="margin-top:4px">${condSkillsText(obj.c)}</div><div class="meta" style="margin-top:4px">${esc(condWeaponText(obj.c))}</div>`),
+    foot: '<button class="btn" data-use>呼び出すだけ</button><button class="btn primary" data-keep>保存して呼び出す</button>',
+    onMount(m, close) {
+      m.querySelector("[data-use]").addEventListener("click", () => {
+        if (!confirmReplace()) return;
+        close(); modalRoot.innerHTML = ""; applyCond(obj.c, { label: "呼び出しました（未保存）" }); setTab("search");
+      });
+      m.querySelector("[data-keep]").addEventListener("click", () => {
+        const now = Date.now();
+        const rec = { id: uid(), name: obj.n || "", cond: obj.c, createdAt: now, updatedAt: now, usedAt: now, useCount: 0 };
+        if (!okToSave("savedConds", rec)) return;
+        if (!confirmReplace()) return;
+        update((s) => { s.savedConds.push(rec); });
+        close(); modalRoot.innerHTML = ""; applyCond(rec.cond, { id: rec.id, label: "保存して呼び出しました" }); setTab("search");
+      });
+    },
+  });
+}
+async function openShareCode(code) {
+  try {
+    const obj = await decodeShare(code);
+    if (obj.g !== getGame()) await switchGame(obj.g);
+    importCondDialog(obj);
+  } catch (e) {
+    alert("共有リンクを読み込めませんでした: " + e.message);
+  }
+}
+function pasteShareDialog() {
+  openModal({
+    title: "共有リンクを貼り付け",
+    body: fsec("", fld("リンク", '<textarea data-text style="min-height:96px" placeholder="https://…?share=…"></textarea>')),
+    foot: '<button class="btn" data-close>キャンセル</button><button class="btn primary" data-go>取り込む</button>',
+    onMount(m, close) {
+      m.querySelector("[data-go]").addEventListener("click", () => {
+        const t = m.querySelector("[data-text]").value.trim();
+        const mm = /share=([A-Za-z0-9_-]+)/.exec(t) || /^([zj][A-Za-z0-9_-]+)$/.exec(t);
+        if (!mm) { toast("共有リンクが見つかりません"); return; }
+        close();
+        openShareCode(mm[1]);
+      });
+    },
+  });
+}
+
+// ======================================================================
 // 画面: 検索
 // ======================================================================
 function renderSearch() {
@@ -460,7 +807,16 @@ function renderSearch() {
   const w = isW();
   const augCount = w ? st.artians.filter((a) => a.enabled !== false).length : st.qurious.filter((q) => q.enabled !== false).length;
 
+  const act = activeSaved();
+  const nSaved = st.savedConds.length;
   view.innerHTML = `
+  <div class="condbar">
+    <div class="cb-name">${act
+      ? `<b>${esc(condName(act))}</b>${regNoHTML(act.no)}${condDirty() ? ' <span class="tag warn">変更あり</span>' : ""}`
+      : '<span class="muted">保存していない条件</span>'}</div>
+    <button class="btn sm" data-act="cond-save" ${conds.length ? "" : "disabled"}>保存</button>
+    <button class="btn sm" data-act="cond-load">呼び出し${nSaved ? ` <span class="cnt">${nSaved}</span>` : ""}</button>
+  </div>
   <div class="grid2">
   <div>
     <h2><span class="grow">スキル条件</span>
@@ -601,6 +957,7 @@ function buildInput() {
 
 function runSearch() {
   const { input, keyMap, conds } = buildInput();
+  const condAtSearch = currentCond();
   const prog = document.getElementById("progress");
   const runBtn = view.querySelector('[data-act="run"]');
   const cancelBtn = view.querySelector('[data-act="cancel"]');
@@ -624,7 +981,7 @@ function runSearch() {
       worker.terminate();
       worker = null;
       finish();
-      last = { out: m.out, keyMap, conds, targets: Object.fromEntries(input.conds.map((c) => [c.skill, c.level])), at: new Date() };
+      last = { out: m.out, keyMap, conds, cond: condAtSearch, targets: Object.fromEntries(input.conds.map((c) => [c.skill, c.level])), at: new Date() };
       resultShown = 30;
       prog.textContent = "";
       toast(`${m.out.results.length.toLocaleString()}件見つかりました`);
@@ -718,7 +1075,8 @@ function renderResults() {
   list = sorted(list, st.key, st.dir, resultKeyFns());
   const shown = list.slice(0, resultShown);
   view.innerHTML = `
-    <h2><span class="grow">検索結果 ${out.results.length.toLocaleString()}件</span><span class="muted small">${G().short} / ${(out.stats.ms / 1000).toFixed(2)}秒</span></h2>
+    <h2><span class="grow">検索結果 ${out.results.length.toLocaleString()}件</span><span class="muted small">${(out.stats.ms / 1000).toFixed(2)}秒</span>
+      <button class="btn sm" data-act="res-save-cond">条件を保存</button></h2>
     ${out.truncated ? `<div class="notice">最大件数で打ち切り</div>` : ""}
     ${!out.results.length ? `<div class="notice">該当なし</div>` : ""}
     <div class="card">
@@ -770,6 +1128,7 @@ function snapshot(r) {
     id: uid(),
     savedAt: Date.now(),
     conds: last.conds,
+    cond: last.cond,
     targets: last.targets,
     pieces: r.pieces.map((p, pi) => {
       const it = km[p.items[0]];
@@ -1362,9 +1721,10 @@ const DUP_SIG = {
   charms: (c) => [(c.skills || []).filter((x) => x[0]).map(([k, v]) => k + ":" + v).sort().join("|"), descJoin(c.slots), descJoin(c.wslots)].join("/"),
   artians: (a) => [a.type, Object.keys(a.skills || {}).sort().join("|"), descJoin(a.wslots)].join("/"),
   weapons: (w) => [w.name, w.type, descJoin(w.slots)].join("/"),
+  savedConds: (x) => condSig(x.cond),
   mysets: (x) => (x.pieces || []).map((p) => [p.part, p.name, p.note, (p.decos || []).map((d) => d.deco || "-").join(".")].join(":")).join("/"),
 };
-const DUP_LABEL = { qurious: "傀異錬成防具", artians: "アーティア武器", weapons: "武器", mysets: "マイセット" };
+const DUP_LABEL = { qurious: "傀異錬成防具", artians: "アーティア武器", weapons: "武器", mysets: "マイセット", savedConds: "検索条件" };
 function findDup(kind, rec, list = S()[kind]) {
   const sig = DUP_SIG[kind](rec);
   return list.find((x) => x.id !== rec.id && DUP_SIG[kind](x) === sig) || null;
@@ -1606,6 +1966,7 @@ function renderMysets() {
       return `<div class="item" data-sid="${x.id}">
         <div class="res-head"><input type="text" class="grow" data-act="set-memo" value="${esc(x.memo || "")}" placeholder="メモ（例: 太刀 火力）">
           <button class="btn sm danger" data-act="set-del">削除</button></div>
+        <div class="row" style="margin-top:6px"><button class="btn sm" data-act="set-load-cond">条件を呼び出す</button><button class="btn sm" data-act="set-save-cond">条件を保存</button></div>
         <div class="muted small" style="margin-top:4px">${new Date(x.savedAt).toLocaleString("ja-JP")} ／ 防御 <b>${x.def}</b> ／ 空き ${freeHTML(x.free, x.freeW)}</div>
         <table class="pieces">${x.pieces.map((p) => pieceRowHTML({
           part: p.part, tag: itemTag({ kind: p.kind, key: p.key }), name: p.name, no: p.no, note: p.note,
@@ -1672,6 +2033,14 @@ function helpBody(key) {
   const ex = (html) => `<span class="ex">${html}</span>`;
   switch (key) {
     case "search": return `
+      <h3>検索条件の保存・呼び出し</h3>
+      <ul>
+        <li><b>保存</b>: スキル条件・武器の指定・検索対象・最大件数を保存します（所持登録や装飾品の所持数は含みません）。ニックネームを入れなければ「検索条件（番号）」になります。呼び出し中の条件は<b>上書き保存</b>か<b>新規保存</b>を選べます。</li>
+        <li><b>呼び出し</b>: 保存した条件の一覧です。<b>呼び出す</b>で今の条件と置き換えます（保存していない変更があれば確認します）。<b>編集</b>でニックネームの変更・複製・削除ができます。</li>
+        <li>上部に呼び出し中の条件名が出ます。呼び出した後に変えると<span class="tag warn">変更あり</span>が付きます。</li>
+        <li><b>共有</b>: 条件をリンクにして送ります（iPhoneの共有メニュー、またはリンクのコピー）。受け取った人はリンクを開くと「保存して呼び出す」か「呼び出すだけ」を選べます。リンクを開けないときは、呼び出し画面の<b>共有リンクを貼り付け</b>から取り込めます。</li>
+        <li>共有では、相手の端末にないアーティア・登録武器は、そのスロットの「スロット指定」に置き換えて送ります。</li>
+      </ul>
       <h3>スキル条件</h3>
       <ul>
         <li><b>＋スキル追加</b>: 発動させたいスキルを選びます。名前の一部・読み（例:「弱特」「こうげき」）でも探せます。</li>
@@ -1794,6 +2163,7 @@ function helpBody(key) {
     case "mysets": return `
       <ul>
         <li>結果タブの<b>${ICON_STAR}保存</b>で追加されます。保存時の装備名・登録番号・スキル・装飾品が記録されます。</li>
+        <li><b>条件を呼び出す</b>: そのセットを出したときの検索条件を検索タブに戻します。<b>条件を保存</b>: その条件を検索条件として保存します。</li>
         <li>以前の形式で保存したマイセットは、装備名・メモ・スロット構成から登録装備を当てはめて表示します（<span class="tag">推定</span>）。1つに決まらないときは候補の登録番号を表示します。</li>
         <li><span class="tag warn">登録変更あり</span>: 保存後に、その登録装備のスキルやスロットを編集しました。<span class="tag warn">削除済み</span>: その登録装備を削除しました。</li>
         <li>メモ欄に自由に名前を付けられます。並び替えもできます。</li>
@@ -2107,6 +2477,28 @@ view.addEventListener("click", (e) => {
       save();
       renderEquipBody();
       break;
+    case "cond-save":
+      saveCondDialog();
+      break;
+    case "cond-load":
+      condListDialog();
+      break;
+    case "res-save-cond":
+      if (last?.cond) saveCondDialog(last.cond, false);
+      break;
+    case "set-load-cond":
+    case "set-save-cond": {
+      const x = st.mysets.find((y) => y.id === el.closest("[data-sid]").dataset.sid);
+      if (!x) break;
+      // 旧形式（武器・検索対象を記録していない）は、スキル条件だけ使い、他は今の設定
+      const cur = currentCond();
+      const cond = x.cond || { conds: x.conds || [], weapon: cur.weapon, opts: cur.opts };
+      if (act === "set-save-cond") { saveCondDialog(cond, false); break; }
+      if (!confirmReplace()) break;
+      applyCond(cond, { label: x.cond ? "マイセットの条件を呼び出しました" : "スキル条件を呼び出しました（武器・検索対象は今の設定）" });
+      setTab("search");
+      break;
+    }
     case "set-del":
       if (confirm("このマイセットを削除しますか？")) { const id = el.closest("[data-sid]").dataset.sid; update((s) => { s.mysets = s.mysets.filter((x) => x.id !== id); }); renderMysets(); }
       break;
@@ -2220,6 +2612,12 @@ async function init() {
   }
   const h = location.hash.slice(1);
   if (TABS.includes(h)) tab = h; // URL の #画面名 から開く
+  // 共有リンク（?share=...）で開いたら取り込み確認を出し、URL からは消す
+  const shareCode = new URLSearchParams(location.search).get("share");
+  if (shareCode) {
+    history.replaceState(null, "", location.pathname + location.hash);
+    setTimeout(() => openShareCode(shareCode), 0);
+  }
   markTabs(tab);
   rerender();
   if ("serviceWorker" in navigator && location.protocol === "https:") {

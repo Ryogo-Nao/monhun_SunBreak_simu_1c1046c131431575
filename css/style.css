@@ -355,3 +355,10 @@ button.chip.sk::after { inset: -6px -2px; }
 .lvrow:first-child { border-top: 0; padding-top: 0; }
 .lvrow .lv { font-weight: 700; font-size: 14px; }
 .lvrow .tx, .sktext { white-space: pre-line; font-size: 14px; margin: 0; }
+
+/* 検索タブ上部: 呼び出し中の検索条件 */
+.condbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.condbar .cb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.condbar .cnt { display: inline-block; min-width: 1.4em; padding: 0 4px; border-radius: 999px; background: var(--chip); font-size: 12px; text-align: center; }
+/* シート下部のボタンが多いときは折り返す（横にはみ出さない） */
+.modal .mf { flex-wrap: wrap; }

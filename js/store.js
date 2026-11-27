@@ -25,6 +25,8 @@ export const defaultState = () => ({
     limit: 5000,
   },
   mysets: [],
+  savedConds: [],     // 保存した検索条件 {id, no, name(ニックネーム。空なら「検索条件（No）」), cond:{conds, weapon, opts}, createdAt, updatedAt, usedAt, useCount}
+  activeCondId: null, // 呼び出し中の保存条件
   settings: { sex: 0 },
   ui: {},
 });
